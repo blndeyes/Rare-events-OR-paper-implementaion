@@ -77,6 +77,37 @@ RAW_LABEL_ALIASES: Final = {
     "ot": "operating_table",
 }
 
+# Raw grayscale values used by MMOR's ``segmentation_export_*`` PNGs.  These
+# values come from the official panoptic dataset loader, not from the target
+# paper. Values 14, 19, 20, 22, and 23 are documented upstream as artifacts.
+MMOR_SEGMENTATION_LABELS: Final = {
+    1: "instrument_table",
+    2: "anesthesia_equipment",
+    3: "operating_table",
+    4: "mps_station",
+    5: "patient",
+    6: "drape",
+    7: "anaesthetist",
+    8: "circulator",
+    9: "assistant_surgeon",
+    10: "head_surgeon",
+    11: "mps",
+    12: "nurse",
+    13: "drill",
+    15: "hammer",
+    16: "saw",
+    17: "tracker",
+    18: "mako_robot",
+    24: "monitor",
+    25: "c_arm",
+    26: "unrelated_person",
+    27: "student",
+    28: "secondary_table",
+    29: "cementer",
+}
+
+MMOR_ARTIFACT_LABELS: Final = (14, 19, 20, 22, 23)
+
 
 def vocabulary() -> tuple[str, ...]:
     """Return the ordered 36-label paper vocabulary."""

@@ -28,13 +28,27 @@ The tests must pass, and the semantic command must report 21 entities, 15
 predicates, and 36 labels. Inventory reports should agree with the committed
 dataset audit. Differences are a stop condition, not something to train through.
 
-## Run after geometry lands: inspect actual pictures
+## Run now that geometry has landed: inspect actual pictures
 
-The next user-visible checkpoint is one short MMOR clip. Verify the fitted
-ellipses over the source frames, then inspect the rendered red/green class and
-blue depth channels. Reject the output if ellipses jump between frames, class
-colors change, depth ordering is reversed, or any predicate appears as a
-standalone ellipse. The exact command will land with the geometry module.
+Create a one-frame plumbing preview from MMOR camera 1 (replace `FRAME` with an
+annotated frame such as `000329`):
+
+```bash
+ROOT=/home/irtaza/dump/or-datasets/MM-OR_processed/001_PKA
+FRAME=000329
+PYTHONPATH=src python3 -m or_video_reproduction.geometry.preview \
+  --rgb "$ROOT/colorimage/camera01_colorimage-$FRAME.jpg" \
+  --mask "$ROOT/segmentation_export_1/camera01_colorimage-$FRAME.png" \
+  --depth "$ROOT/depthimage/camera01_depthimage-$FRAME.tiff" \
+  --output-dir /tmp/or-geometry-preview
+```
+
+Inspect `/tmp/or-geometry-preview/comparison.png` and `metadata.json`. This smoke
+test deliberately uses MMOR sensor depth to validate alignment and rendering; it
+does **not** replace Video Depth Anything in the reproduction. Reject the output
+if ellipses badly mismatch masks, class colors change, depth ordering is reversed,
+or any predicate appears as a standalone ellipse. A multi-frame temporal preview
+will be the next gate after the one-frame output passes.
 
 ## Run after model integration: cheap GPU checks
 

@@ -9,7 +9,10 @@ description = "Reproduction of geometry-conditioned OR video synthesis"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-dependencies = []
+dependencies = [
+  "numpy>=1.26,<3",
+  "Pillow>=10,<13",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -20,6 +23,7 @@ dev = [
 [project.scripts]
 or-dataset-inventory = "or_video_reproduction.data.inventory:main"
 or-mmor-semantics = "or_video_reproduction.data.semantics:main"
+or-geometry-preview = "or_video_reproduction.geometry.preview:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

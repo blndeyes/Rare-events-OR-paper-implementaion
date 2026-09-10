@@ -12,9 +12,10 @@ The first target is Table 1:
 
 ## Current status
 
-Phase 1 is in progress: source audit, dataset inventory, and reproduction-spec
-development. Full preprocessing and training are deliberately gated on passing the
-small correctness checks described in [the reproduction plan](docs/reproduction-plan.md).
+Dataset/source auditing is complete enough to enter the geometry phase. A
+one-frame MMOR conditioning preview and numerical geometry tests are available.
+Full preprocessing and training remain gated on the checks described in
+[the reproduction plan](docs/reproduction-plan.md).
 
 ## Local development
 
@@ -54,4 +55,5 @@ committed.
 - [Dataset audit](docs/dataset-audit.md)
 - [Ambiguities register](docs/ambiguities.md)
 - [Supervisor questions](docs/supervisor-questions.md)
+- [Verification checkpoints](docs/verification-guide.md)
 - [Agent project brief](docs/agent-prompt.md)

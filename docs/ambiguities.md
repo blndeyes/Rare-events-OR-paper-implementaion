@@ -10,9 +10,9 @@ Status values: `open`, `hypothesis`, `resolved`, or `blocked`.
 | Six MMOR and six 4DOR Table 1 clips | open | Not disclosed. Must choose before final evaluation and label as a reproduction deviation. |
 | Camera views | open | Paper does not identify cameras. Inspect examples and dataset conventions. |
 | 1 fps to 24 fps interpolation | open | Paper cites LTX keyframe interpolation but omits sampling and boundary details. |
-| Class palette | hypothesis | Selected `paper_36`: 21 supplementary entity labels plus 15 non-proximity predicates. Exact red/green values remain undisclosed; predicates are relations and cannot create standalone ellipses. |
-| Ellipse fit | open | Centroid, height, width, angle are stated; fitting algorithm and conventions are omitted. |
-| Depth normalization | open | Averaging within instance masks is stated; normalization scope and direction are omitted. |
+| Class palette | hypothesis | Selected `paper_36`: 21 supplementary entity labels plus 15 non-proximity predicates. A deterministic 6×6 red/green lattice is testable but not author-disclosed; predicates cannot create standalone ellipses. |
+| Ellipse fit | hypothesis | Filled-mask second moments; diameter is 4×sqrt(covariance eigenvalue), angle is major-axis degrees clockwise from +x in image coordinates. Paper gives no fitting convention. |
+| Depth normalization | hypothesis | Mean valid depth inside each instance, min-max over visible instances per frame, with near encoded as blue 255. VDA direction must be verified before preprocessing. |
 | PatchGAN | blocked | Architecture, receptive field, inputs, loss, coefficient, and optimization schedule are absent. Escalate questions to the user's supervisor if public evidence is insufficient. |
 | Optimizer details | resolved | Pinned trainer passes only LR to PyTorch AdamW: betas `(0.9, 0.999)`, epsilon `1e-8`, weight decay `0.01`. LinearLR decays 1.0 to 0.1 over all steps with no warmup. These are upstream defaults, not paper facts. |
 | Metric implementations | open | Exact FVD backbone/library, spatial preprocessing, temporal sampling, and per-video aggregation are absent. |

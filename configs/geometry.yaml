@@ -1,0 +1,26 @@
+# Geometry choices where the target paper omits an exact implementation.
+target_size: [1024, 768]
+
+ellipse:
+  method: filled_mask_second_moments
+  angle_convention: clockwise_from_positive_x_in_image_coordinates
+  minimum_pixels: 5
+
+semantic_encoding:
+  profile: paper_36
+  palette: six_by_six_red_green_lattice
+  # Explicit reproduction hypothesis; the paper does not publish its mapping.
+  levels: [32, 70, 108, 146, 184, 222]
+  renderable_label_type: entity
+
+depth:
+  aggregation: mean_of_valid_pixels_inside_instance_mask
+  normalization_scope: visible_instances_per_frame
+  near_blue_value: 255
+  # VDA output direction must be checked before preprocessing. The real-data
+  # smoke preview uses MMOR sensor depth, where smaller values are nearer.
+  input_direction: null
+
+occlusion:
+  drawing_order: far_to_near
+  tie_break: [class_name, instance_key]
