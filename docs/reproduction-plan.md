@@ -56,6 +56,10 @@ paper's undisclosed red/green mapping remain hard gates before bulk preprocessin
 The class-count gate uses the explicit `paper_36` interpretation; predicates remain
 relation labels and do not generate ellipse instances.
 
+The moment-matched ellipse core and a five-frame real MMOR diagnostic have passed;
+results and remaining 97-frame/VDA/SAM2 work are recorded in the
+[geometry audit](geometry-audit.md).
+
 The paper used one NVIDIA A100 but does not state its memory capacity. Any 4090
 memory accommodation must preserve the paper's effective optimization settings and be
 recorded with each run.

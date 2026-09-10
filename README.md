@@ -53,6 +53,7 @@ committed.
 - [Reproduction plan](docs/reproduction-plan.md)
 - [Source audit](docs/source-audit.md)
 - [Dataset audit](docs/dataset-audit.md)
+- [Geometry audit](docs/geometry-audit.md)
 - [Ambiguities register](docs/ambiguities.md)
 - [Supervisor questions](docs/supervisor-questions.md)
 - [Verification checkpoints](docs/verification-guide.md)
