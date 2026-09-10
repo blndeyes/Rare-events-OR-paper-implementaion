@@ -11,7 +11,7 @@ evaluation data.
 | Paper component | Paper description | Planned implementation | Verification |
 | --- | --- | --- | --- |
 | Geometric abstraction | SAM2 masks, Video Depth Anything, mask-fitted ellipses | `geometry` and preprocessing modules | synthetic-mask tests and visual overlays |
-| Class encoding | 36 MMOR classes encoded in red/green | versioned class palette | uniqueness and round-trip tests |
+| Class encoding | 36 MMOR semantic labels encoded in red/green | versioned `paper_36` vocabulary: 21 entities + 15 predicates | count, uniqueness, and round-trip tests |
 | Depth encoding | normalized relative depth in blue | configurable mask aggregation and normalization | monotonicity and range tests |
 | Conditioning | 97 rendered frames paired with target video | IC-LoRA reference video | paired-shape and alignment checks |
 | Diffusion | LTX-Video IC-LoRA | pinned official legacy trainer | one-batch forward/backward test |
@@ -49,10 +49,12 @@ source-frame sequences, not prebuilt 97-frame, 24-fps clips. Reproducing the aut
 338 examples therefore requires a separate, still-undetermined event-clipping and
 interpolation recipe.
 
-The first complete inventory is recorded in [the dataset audit](dataset-audit.md).
+The first complete inventory is recorded in [the dataset audit](dataset-audit.md), and
+the commands to run at each gate are in [the verification guide](verification-guide.md).
 Timestamp-to-file integrity passes for both datasets. Exact clip construction and the
-paper's stated 36-class palette do not yet pass and remain hard gates before bulk
-preprocessing.
+paper's undisclosed red/green mapping remain hard gates before bulk preprocessing.
+The class-count gate uses the explicit `paper_36` interpretation; predicates remain
+relation labels and do not generate ellipse instances.
 
 The paper used one NVIDIA A100 but does not state its memory capacity. Any 4090
 memory accommodation must preserve the paper's effective optimization settings and be

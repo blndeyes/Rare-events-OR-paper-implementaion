@@ -19,6 +19,7 @@ dev = [
 
 [project.scripts]
 or-dataset-inventory = "or_video_reproduction.data.inventory:main"
+or-mmor-semantics = "or_video_reproduction.data.semantics:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

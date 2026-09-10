@@ -1,0 +1,59 @@
+# Selected interpretation of the target paper's 36 MMOR semantic classes.
+profile: paper_36
+semantic_label_count: 36
+
+# These 21 labels come from MMOR supplementary Table 5. They can describe
+# segmented instances and are therefore the only labels eligible for ellipses.
+entity_classes:
+  - anaesthetist
+  - anesthesia_equipment
+  - assistant_surgeon
+  - c_arm
+  - circulator
+  - drape
+  - drill
+  - hammer
+  - head_surgeon
+  - instrument
+  - instrument_table
+  - mako_robot
+  - monitor
+  - mps
+  - mps_station
+  - nurse
+  - operating_table
+  - patient
+  - saw
+  - student
+  - tracker
+
+# Predicates describe subject-object edges, not masks. They complete the
+# paper-level vocabulary but must not create standalone ellipse instances.
+predicate_classes:
+  - assisting
+  - calibrating
+  - cementing
+  - cleaning
+  - cutting
+  - drilling
+  - hammering
+  - holding
+  - lying_on
+  - manipulating
+  - preparing
+  - sawing
+  - scanning
+  - suturing
+  - touching
+
+# Official code contains closeTo as a sixteenth, automatically derived spatial
+# relation. It is excluded from the selected 21 + 15 paper interpretation.
+excluded_spatial_predicates:
+  - close_to
+
+# Observed in official code/data but outside supplementary Table 5's 21 entities.
+# Parsers must report these explicitly rather than silently assign a paper class.
+official_extra_entities:
+  - secondary_table
+  - unrelated_person
+  - cementer
