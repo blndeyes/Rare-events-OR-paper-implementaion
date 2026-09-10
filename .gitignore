@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+.ssh_known_hosts
+
+# Datasets, model files, caches, and experiment outputs
+/data/
+/datasets/
+/artifacts/
+/outputs/
+/checkpoints/
+/preprocessed_data/
+/reference_latents/
+/latents/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.mp4
+*.mov
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

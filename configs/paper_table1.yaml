@@ -1,0 +1,65 @@
+# Values explicitly stated in arXiv:2602.21365v1.
+# Unknown fields remain null instead of being silently inferred.
+experiment:
+  name: paper_table1_ours
+  seed: null
+  target_resolution: [1024, 768]
+  frames: 97
+  output_fps: 24
+
+data:
+  training_dataset: MMOR
+  training_videos: 338
+  ablation_test_videos: 50
+  table1_test_videos:
+    MMOR: 6
+    4DOR: 6
+  split_manifest: null
+  camera_ids: null
+
+model:
+  family: LTX-Video
+  trainer: LTX-Video-Trainer
+  checkpoint: null
+  upstream_commit: null
+  training_mode: lora
+  conditioning_mode: reference_video
+  lora:
+    rank: 128
+    alpha: 128
+    dropout: null
+    target_modules: null
+
+training:
+  steps: 8000
+  learning_rate: 0.0002
+  optimizer: AdamW
+  batch_size: null
+  gradient_accumulation_steps: null
+  mixed_precision: bf16
+  first_frame_conditioning_probability: 0.2
+  scheduler: null
+  weight_decay: null
+  patchgan:
+    enabled: true
+    architecture: null
+    loss: null
+    weight: null
+
+inference:
+  denoising_steps: 50
+  guidance_scale: 3.5
+  first_frame_conditioning: true
+
+targets:
+  MMOR:
+    FVD: 689.88
+    SSIM: 0.86
+    PSNR: 23.21
+    LPIPS: 0.13
+  4DOR:
+    FVD: 265.25
+    SSIM: 0.90
+    PSNR: 25.87
+    LPIPS: 0.07
+
