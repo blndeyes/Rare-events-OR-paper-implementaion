@@ -1,14 +1,16 @@
 diff --git a/ltx_video/inference.py b/ltx_video/inference.py
-index e510238..6532fd3 100644
+index 1eddc8e..6c7a4da 100644
 --- a/ltx_video/inference.py
 +++ b/ltx_video/inference.py
-@@ -193,3 +193,4 @@ def create_ltx_video_pipeline(
+@@ -191,6 +191,7 @@ def create_ltx_video_pipeline(
+     enhance_prompt: bool = False,
      prompt_enhancer_image_caption_model_name_or_path: Optional[str] = None,
      prompt_enhancer_llm_model_name_or_path: Optional[str] = None,
 +    offload_to_cpu: bool = False,
  ) -> LTXVideoPipeline:
-@@ -221,7 +222,8 @@ def create_ltx_video_pipeline(
-     tokenizer = T5Tokenizer.from_pretrained(
+     ckpt_path = Path(ckpt_path)
+     assert os.path.exists(
+@@ -222,9 +223,10 @@ def create_ltx_video_pipeline(
          text_encoder_model_name_or_path, subfolder="tokenizer"
      )
  
@@ -19,7 +21,10 @@ index e510238..6532fd3 100644
 +        transformer = transformer.to(device)
 +        vae = vae.to(device)
 +        text_encoder = text_encoder.to(device)
-@@ -267,5 +269,8 @@ def create_ltx_video_pipeline(
+ 
+     if enhance_prompt:
+         prompt_enhancer_image_caption_model = AutoModelForCausalLM.from_pretrained(
+@@ -267,7 +269,10 @@ def create_ltx_video_pipeline(
      }
  
      pipeline = LTXVideoPipeline(**submodel_dict)
@@ -29,6 +34,8 @@ index e510238..6532fd3 100644
 +    else:
 +        pipeline = pipeline.to(device)
      return pipeline
+ 
+ 
 @@ -486,6 +491,7 @@ def infer(config: InferenceConfig):
          enhance_prompt=enhance_prompt,
          prompt_enhancer_image_caption_model_name_or_path=prompt_enhancer_image_caption_model_name_or_path,
@@ -37,7 +44,7 @@ index e510238..6532fd3 100644
      )
  
      if pipeline_config.get("pipeline_type", None) == "multi-scale":
-@@ -494,6 +500,6 @@ def infer(config: InferenceConfig):
+@@ -494,7 +500,7 @@ def infer(config: InferenceConfig):
                  "spatial upscaler model path is missing from pipeline config file and is required for multi-scale rendering"
              )
          latent_upsampler = create_latent_upsampler(
@@ -45,3 +52,4 @@ index e510238..6532fd3 100644
 +            spatial_upscaler_model_path, device
          )
          pipeline = LTXMultiScalePipeline(pipeline, latent_upsampler=latent_upsampler)
+ 
