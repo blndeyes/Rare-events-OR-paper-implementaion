@@ -2,7 +2,7 @@ diff --git a/configs/ltxv-13b-0.9.7-dev-fp8.yaml b/configs/ltxv-13b-0.9.7-dev-fp
 index b5d919e..5a21645 100644
 --- a/configs/ltxv-13b-0.9.7-dev-fp8.yaml
 +++ b/configs/ltxv-13b-0.9.7-dev-fp8.yaml
-@@ -10,7 +10,7 @@ text_encoder_model_name_or_path: "PixArt-alpha/PixArt-XL-2-1024-MS"
+@@ -9,6 +9,6 @@ text_encoder_model_name_or_path: "PixArt-alpha/PixArt-XL-2-1024-MS"
  precision: "float8_e4m3fn" # options: "float8_e4m3fn", "bfloat16", "mixed_precision"
  sampler: "from_checkpoint" # options: "uniform", "linear-quadratic", "from_checkpoint"
 -prompt_enhancement_words_threshold: 120
