@@ -10,13 +10,14 @@ On `IRTAZAPC`, update the repository and run:
 ```bash
 cd /home/irtaza/Rare-events-OR-paper-implementaion
 git pull --ff-only
-PYTHONPATH=src python3 -m unittest discover -s tests -v
-PYTHONPATH=src python3 -m or_video_reproduction.data.semantics
-PYTHONPATH=src python3 -m or_video_reproduction.data.inventory mmor \
+OR_PYTHON=/home/irtaza/anaconda3/bin/python
+PYTHONPATH=src "$OR_PYTHON" -m unittest discover -s tests -v
+PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.data.semantics
+PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.data.inventory mmor \
   --root /home/irtaza/dump/or-datasets/MM-OR_processed \
   --output /tmp/mmor-inventory.json \
   --report /tmp/mmor-inventory.md
-PYTHONPATH=src python3 -m or_video_reproduction.data.inventory 4dor \
+PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.data.inventory 4dor \
   --root /home/irtaza/dump/or-datasets/4D-OR_full \
   --output /tmp/4dor-inventory.json \
   --report /tmp/4dor-inventory.md
@@ -34,12 +35,13 @@ Create a one-frame plumbing preview from MMOR camera 1 (replace `FRAME` with an
 annotated frame such as `000329`):
 
 ```bash
-ROOT=/home/irtaza/dump/or-datasets/MM-OR_processed/001_PKA
+OR_PYTHON=/home/irtaza/anaconda3/bin/python
+MMOR_SAMPLE_ROOT=/home/irtaza/dump/or-datasets/MM-OR_processed/001_PKA
 FRAME=000329
-PYTHONPATH=src python3 -m or_video_reproduction.geometry.preview \
-  --rgb "$ROOT/colorimage/camera01_colorimage-$FRAME.jpg" \
-  --mask "$ROOT/segmentation_export_1/camera01_colorimage-$FRAME.png" \
-  --depth "$ROOT/depthimage/camera01_depthimage-$FRAME.tiff" \
+PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.geometry.preview \
+  --rgb "$MMOR_SAMPLE_ROOT/colorimage/camera01_colorimage-$FRAME.jpg" \
+  --mask "$MMOR_SAMPLE_ROOT/segmentation_export_1/camera01_colorimage-$FRAME.png" \
+  --depth "$MMOR_SAMPLE_ROOT/depthimage/camera01_depthimage-$FRAME.tiff" \
   --output-dir /tmp/or-geometry-preview
 ```
 
@@ -53,7 +55,8 @@ will be the next gate after the one-frame output passes.
 After the one-frame preview passes, render five consecutive 1-fps annotations:
 
 ```bash
-PYTHONPATH=src python3 -m or_video_reproduction.geometry.sequence_preview \
+OR_PYTHON=/home/irtaza/anaconda3/bin/python
+PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.geometry.sequence_preview \
   --root /home/irtaza/dump/or-datasets/MM-OR_processed \
   --procedure 001_PKA --camera 1 --start-frame 329 --count 5 \
   --output-dir /tmp/or-geometry-sequence
