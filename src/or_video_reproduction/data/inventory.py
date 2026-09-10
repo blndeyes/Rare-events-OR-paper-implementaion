@@ -26,6 +26,87 @@ COLOR_FRAME_PATTERN = re.compile(
 )
 PROCEDURE_PATTERN = re.compile(r"(?:^|[-_])(?:\d+)(?:[-_]\d+)?_(?:PKA|TKA)$", re.IGNORECASE)
 TAKE_PATTERN = re.compile(r"^export_holistic_take(?P<take>\d+)_processed$")
+MMOR_LOGICAL_TAKES = (
+    "001_PKA",
+    "002_PKA",
+    "003_TKA",
+    "004_PKA",
+    "005_TKA",
+    "006_PKA",
+    "007_TKA",
+    "008_PKA",
+    "009_TKA",
+    "010_PKA",
+    "011_TKA",
+    "012_1_PKA",
+    "012_2_PKA",
+    "013_PKA",
+    "014_PKA",
+    "015_PKA",
+    "016_PKA",
+    "017_PKA",
+    "018_1_PKA",
+    "018_2_PKA",
+    "019_PKA",
+    "020_PKA",
+    "021_PKA",
+    "022_PKA",
+    "023_PKA",
+    "024_PKA",
+    "025_PKA",
+    "026_PKA",
+    "027_PKA",
+    "028_PKA",
+    "029_PKA",
+    "030_PKA",
+    "031_PKA",
+    "032_PKA",
+    "033_PKA",
+    "035_PKA",
+    "036_PKA",
+    "037_TKA",
+    "038_TKA",
+)
+MMOR_TAKE_TO_FOLDER = {
+    "012_1_PKA": "012_PKA",
+    "012_2_PKA": "012_PKA",
+    "015_PKA": "015-018_PKA",
+    "016_PKA": "015-018_PKA",
+    "017_PKA": "015-018_PKA",
+    "018_1_PKA": "015-018_PKA",
+    "018_2_PKA": "015-018_PKA",
+    "019_PKA": "019-022_PKA",
+    "020_PKA": "019-022_PKA",
+    "021_PKA": "019-022_PKA",
+    "022_PKA": "019-022_PKA",
+    "023_PKA": "023-032_PKA",
+    "024_PKA": "023-032_PKA",
+    "025_PKA": "023-032_PKA",
+    "026_PKA": "023-032_PKA",
+    "027_PKA": "023-032_PKA",
+    "028_PKA": "023-032_PKA",
+    "029_PKA": "023-032_PKA",
+    "030_PKA": "023-032_PKA",
+    "031_PKA": "023-032_PKA",
+    "032_PKA": "023-032_PKA",
+}
+MMOR_OFFICIAL_PANOPTIC_SPLIT = {
+    "train": [
+        "001_PKA",
+        "003_TKA",
+        "005_TKA",
+        "006_PKA",
+        "008_PKA",
+        "010_PKA",
+        "012_1_PKA",
+        "012_2_PKA",
+        "035_PKA",
+        "037_TKA",
+    ],
+    "val": ["002_PKA", "007_TKA", "009_TKA"],
+    "test": ["004_PKA", "011_TKA", "036_PKA", "038_TKA"],
+    "short_clips": list(MMOR_LOGICAL_TAKES[13:35]),
+}
 
 
 @dataclass(frozen=True)
@@ -106,6 +187,10 @@ def _coverage(reference: set[int], candidate: set[int]) -> dict[str, int | float
         "extra_without_reference": len(candidate - reference),
         "coverage": round(matched / len(reference), 6) if reference else 0.0,
     }
+
+
+def _numeric_values(rows: list[tuple[object, dict[str, object]]], key: str) -> list[int]:
+    return [int(row[key]) for _, row in rows if key in row and str(row[key]).isdigit()]
 
 
 def _json_summary(path: Path) -> dict[str, object]:
@@ -201,7 +286,29 @@ def inventory_mmor(root: Path) -> dict[str, object]:
             "trackercam_separation_indices.json",
         ]
         metadata = {name: _json_summary(procedure / name) for name in metadata_files}
-        metadata["take_json"] = _json_summary(root / "take_jsons" / f"{procedure.name}.json")
+        logical_takes = [
+            take
+            for take in MMOR_LOGICAL_TAKES
+            if MMOR_TAKE_TO_FOLDER.get(take, take) == procedure.name
+        ]
+        take_rows: list[tuple[object, dict[str, object]]] = []
+        take_json_summaries = {}
+        for take in logical_takes:
+            rows, summary = _timestamp_rows(root / "take_jsons" / f"{take}.json")
+            take_rows.extend(rows)
+            take_json_summaries[take] = summary
+        expected_azure_values = _numeric_values(take_rows, "azure")
+        expected_azure = set(expected_azure_values)
+        timestamp_correspondence = {
+            camera: {
+                **_coverage(expected_azure, frames),
+                "timestamp_rows": len(expected_azure_values),
+                "duplicate_timestamp_references": (
+                    len(expected_azure_values) - len(expected_azure)
+                ),
+            }
+            for camera, frames in sorted(color_frames.items())
+        }
 
         procedure_rows.append(
             {
@@ -211,6 +318,9 @@ def inventory_mmor(root: Path) -> dict[str, object]:
                 "modalities": modalities,
                 "correspondence": correspondence,
                 "metadata": metadata,
+                "logical_takes": logical_takes,
+                "take_jsons": take_json_summaries,
+                "timestamp_correspondence": timestamp_correspondence,
             }
         )
 
@@ -225,6 +335,8 @@ def inventory_mmor(root: Path) -> dict[str, object]:
         "root": str(root),
         "procedure_count": len(procedure_rows),
         "camera_frame_totals": dict(sorted(camera_totals.items())),
+        "logical_take_count": len(MMOR_LOGICAL_TAKES),
+        "official_panoptic_split": MMOR_OFFICIAL_PANOPTIC_SPLIT,
         "procedures": procedure_rows,
     }
 
@@ -251,19 +363,21 @@ def _expected_4dor_coverage(
     result: dict[str, object] = {}
     for camera in sorted(color_frames):
         number = int(camera)
-        expected_color = {
-            int(row[f"color_{number}"])
-            for _, row in rows
-            if f"color_{number}" in row and str(row[f"color_{number}"]).isdigit()
-        }
-        expected_depth = {
-            int(row[f"depth_{number}"])
-            for _, row in rows
-            if f"depth_{number}" in row and str(row[f"depth_{number}"]).isdigit()
-        }
+        color_values = _numeric_values(rows, f"color_{number}")
+        depth_values = _numeric_values(rows, f"depth_{number}")
+        expected_color = set(color_values)
+        expected_depth = set(depth_values)
         result[camera] = {
-            "color": _coverage(expected_color, color_frames.get(camera, set())),
-            "depth": _coverage(expected_depth, depth_frames.get(camera, set())),
+            "color": {
+                **_coverage(expected_color, color_frames.get(camera, set())),
+                "timestamp_rows": len(color_values),
+                "duplicate_timestamp_references": len(color_values) - len(expected_color),
+            },
+            "depth": {
+                **_coverage(expected_depth, depth_frames.get(camera, set())),
+                "timestamp_rows": len(depth_values),
+                "duplicate_timestamp_references": len(depth_values) - len(expected_depth),
+            },
         }
     return result
 
@@ -361,8 +475,8 @@ def render_report(payload: dict[str, object]) -> str:
                 "97-frame clips."
             ),
             (
-                "Coverage fields compare identifiers only; they do not establish "
-                "interpolation semantics."
+                "The numeric index range is not a missing-frame test for sampled streams. "
+                "Use timestamp correspondence to test required-file completeness."
             ),
         ]
     )

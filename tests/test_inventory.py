@@ -31,6 +31,12 @@ class MmorInventoryTests(unittest.TestCase):
                 procedure / "panoptic_seg_1",
                 ["camera01_colorimage-000000.png", "camera01_colorimage-000002.png"],
             )
+            take_jsons = root / "take_jsons"
+            take_jsons.mkdir()
+            (take_jsons / "007_TKA.json").write_text(
+                json.dumps({"timestamps": {"0": {"azure": 0}, "1": {"azure": 1}}}),
+                encoding="utf-8",
+            )
 
             inventory = inventory_mmor(root)
 
@@ -58,6 +64,10 @@ class MmorInventoryTests(unittest.TestCase):
             self.assertEqual(
                 procedure_row["correspondence"]["panoptic_seg_1:camera01"]["coverage"],
                 1.0,
+            )
+            self.assertEqual(procedure_row["logical_takes"], ["007_TKA"])
+            self.assertEqual(
+                procedure_row["timestamp_correspondence"]["01"]["coverage"], 0.5
             )
 
     def test_ignores_nonprocedure_directories(self) -> None:
@@ -139,6 +149,12 @@ class FourDorInventoryTests(unittest.TestCase):
                     "missing_from_candidate"
                 ],
                 1,
+            )
+            self.assertEqual(
+                take_row["timestamp_correspondence"]["01"]["color"][
+                    "duplicate_timestamp_references"
+                ],
+                0,
             )
 
     def test_rejects_root_without_takes(self) -> None:
