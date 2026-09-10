@@ -86,6 +86,10 @@ The official 4D-OR source currently uses take split train `[1,3,5,7,9,10]`, vali
 - 4DOR extraction: approximately 153 GiB
 - Python/Conda exists under `/home/irtaza/anaconda3` but is not initialized in the
   non-interactive SSH shell.
+- The official LTX 13B 0.9.7-dev BF16 checkpoint fails during transformer placement
+  on this GPU: 23.48 GiB was in use and the next 32 MiB allocation failed. The
+  official 0.9.7-dev FP8 checkpoint is therefore the documented smoke-test fallback;
+  the target paper does not disclose its interpolation checkpoint precision.
 
 The first MMOR filename inventory found 22 top-level procedure directories and five
 camera streams totaling approximately 63,535 contiguous frames per camera. Panoptic

@@ -12,7 +12,11 @@ from or_video_reproduction.data.clips import validate_clip_manifest
 
 
 PINNED_LTX_COMMIT = "20799e51cd739986d98d9b1aab55cc2067c1eabb"
-PIPELINE_CONFIG = "configs/ltxv-13b-0.9.7-dev.yaml"
+PIPELINE_CONFIGS = {
+    "bf16": "configs/ltxv-13b-0.9.7-dev.yaml",
+    "fp8": "configs/ltxv-13b-0.9.7-dev-fp8.yaml",
+}
+PIPELINE_CONFIG = PIPELINE_CONFIGS["bf16"]
 
 
 def _git_head(repository: Path) -> str:
@@ -34,11 +38,16 @@ def build_interpolation_command(
     output_dir: Path,
     prompt: str,
     seed: int,
+    precision: str = "bf16",
     verify_revision: bool = True,
 ) -> list[str]:
     validate_clip_manifest(manifest)
     if not prompt.strip():
         raise ValueError("An explicit interpolation prompt is required")
+    if precision not in PIPELINE_CONFIGS:
+        raise ValueError(
+            f"Unsupported precision {precision!r}; choose one of {sorted(PIPELINE_CONFIGS)}"
+        )
     if verify_revision:
         actual_commit = _git_head(ltx_root)
         if actual_commit != PINNED_LTX_COMMIT:
@@ -76,7 +85,7 @@ def build_interpolation_command(
         "--seed",
         str(seed),
         "--pipeline_config",
-        str(ltx_root / PIPELINE_CONFIG),
+        str(ltx_root / PIPELINE_CONFIGS[precision]),
         "--offload_to_cpu",
         "--output_path",
         str(output_dir),
@@ -92,6 +101,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--seed", required=True, type=int)
+    parser.add_argument(
+        "--precision",
+        choices=sorted(PIPELINE_CONFIGS),
+        default="bf16",
+        help="Official 0.9.7-dev checkpoint precision (default: bf16)",
+    )
     parser.add_argument("--plan-output", type=Path)
     parser.add_argument("--execute", action="store_true")
     return parser
@@ -109,6 +124,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output_dir,
         prompt=args.prompt,
         seed=args.seed,
+        precision=args.precision,
     )
     plan = {
         "schema_version": 1,
@@ -125,6 +141,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "seed": args.seed,
             "conditioning_strength": 1.0,
             "cpu_offload": True,
+            "checkpoint_precision": args.precision,
         },
         "argv": command,
     }

@@ -3,6 +3,7 @@ from pathlib import Path
 
 from or_video_reproduction.preprocessing.ltx_interpolation import (
     PIPELINE_CONFIG,
+    PIPELINE_CONFIGS,
     build_interpolation_command,
 )
 
@@ -45,6 +46,25 @@ class LtxInterpolationPlanTests(unittest.TestCase):
         self.assertIn("--offload_to_cpu", command)
         pipeline_path = Path(command[command.index("--pipeline_config") + 1])
         self.assertEqual(pipeline_path.name, Path(PIPELINE_CONFIG).name)
+
+    def test_selects_official_fp8_variant_without_changing_clip_shape(self) -> None:
+        command = build_interpolation_command(
+            self._manifest(),
+            dataset_root=Path("/data/mmor"),
+            ltx_root=Path("/upstreams/ltx-video"),
+            python_executable=Path("/env/bin/python"),
+            output_dir=Path("/outputs/smoke"),
+            prompt="Fixed overhead view of an operating room.",
+            seed=42,
+            precision="fp8",
+            verify_revision=False,
+        )
+
+        pipeline_path = Path(command[command.index("--pipeline_config") + 1])
+        self.assertEqual(pipeline_path.name, Path(PIPELINE_CONFIGS["fp8"]).name)
+        self.assertEqual(command[command.index("--num_frames") + 1], "97")
+        self.assertEqual(command[command.index("--height") + 1], "768")
+        self.assertEqual(command[command.index("--width") + 1], "1024")
 
     def test_requires_explicit_prompt(self) -> None:
         with self.assertRaisesRegex(ValueError, "explicit interpolation prompt"):

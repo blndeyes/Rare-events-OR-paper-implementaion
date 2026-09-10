@@ -58,7 +58,11 @@ PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.preprocessing.ltx_interpola
 The prompt and seed are explicit smoke-test hypotheses, not values disclosed by the
 paper. Add `--execute` only after reviewing the plan and confirming model weights are
 available; the launcher then uses the pinned official 0.9.7-dev pipeline with CPU
-offload.
+offload. The BF16 checkpoint cannot load on the audited 24 GiB RTX 4090 (23.48 GiB
+was already in use when a further 32 MiB allocation failed). For this host, add
+`--precision fp8` to select the official 0.9.7-dev FP8 checkpoint. This is an explicit
+hardware accommodation, not a paper-disclosed precision choice; it leaves the model
+version, five-keyframe contract, resolution, frame count, and frame rate unchanged.
 
 ## Run now that geometry has landed: inspect actual pictures
 
