@@ -59,6 +59,14 @@ strong construction hypothesis. It does not explain which intervals produced the
 training and 50 ablation videos, so clip selection remains open and must be frozen in a
 manifest before preprocessing.
 
+The MMOR next-action metadata was also tested as a possible event-boundary source. On
+the official panoptic training takes, grouping only by consecutive action label gives
+132 runs, of which 112 contain at least five 1-fps samples. Replicating those across
+three annotated views would give 336 videos, intriguingly close to but not equal to
+338. Treating countdown resets as distinct action episodes gives 393 episodes, of which
+277 contain at least five samples. Neither rule reproduces 338, so the metadata does
+not justify silently reconstructing the authors' selection.
+
 ## Acceptance status
 
 - **Passed:** dataset roots and take organization; source-sequence counts; JSON

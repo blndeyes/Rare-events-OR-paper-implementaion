@@ -6,7 +6,7 @@ Status values: `open`, `hypothesis`, `resolved`, or `blocked`.
 | --- | --- | --- |
 | LTX model variant and checkpoint | hypothesis | Official `ltxv_13b_ic_lora.yaml` matches every stated trainer value and specifies `LTXV_13B_097_DEV`; the paper itself omits the checkpoint. |
 | Trainer revision | resolved | Reproducible snapshot pinned to `e055182fa36dba6f48eb0919aef09d277da30fbd`, the last official legacy-trainer commit before paper release. Exact author commit remains unknown. |
-| 338 training clips | open | Remote data contains contiguous 1-fps camera frames, not 97-frame clips. Derive the event-clipping/interpolation construction, then freeze a manifest. |
+| 338 training clips | open | Five 1-fps keyframes explain 97 frames at 24 fps. Simple next-action grouping yields 336 three-view clips; countdown-aware grouping does not match 338. This close but non-exact result is insufficient to freeze a manifest. |
 | Six MMOR and six 4DOR Table 1 clips | open | Not disclosed. Must choose before final evaluation and label as a reproduction deviation. |
 | Camera views | open | Paper does not identify cameras. Inspect examples and dataset conventions. |
 | 1 fps to 24 fps interpolation | open | Paper cites LTX keyframe interpolation but omits sampling and boundary details. |
