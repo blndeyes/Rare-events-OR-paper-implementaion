@@ -102,14 +102,21 @@ def create_sequence_preview(
     )
 
     thumbnail_size = (512, 384)
-    sheet = Image.new("RGB", (thumbnail_size[0] * len(overlay_images), thumbnail_size[1] + 28))
-    draw = ImageDraw.Draw(sheet)
-    for index, (frame_number, image) in enumerate(zip(frame_numbers, overlay_images)):
-        thumbnail = image.resize(thumbnail_size, Image.Resampling.LANCZOS)
-        x = index * thumbnail_size[0]
-        sheet.paste(thumbnail, (x, 28))
-        draw.text((x + 8, 7), f"frame {frame_number:06d}", fill=(255, 255, 255))
-    sheet.save(output_dir / "temporal_contact_sheet.png")
+
+    def save_contact_sheet(images: list[Image.Image], name: str) -> None:
+        sheet = Image.new(
+            "RGB", (thumbnail_size[0] * len(images), thumbnail_size[1] + 28), color=(0, 0, 0)
+        )
+        draw = ImageDraw.Draw(sheet)
+        for index, (frame_number, image) in enumerate(zip(frame_numbers, images)):
+            thumbnail = image.resize(thumbnail_size, Image.Resampling.NEAREST)
+            x = index * thumbnail_size[0]
+            sheet.paste(thumbnail, (x, 28))
+            draw.text((x + 8, 7), f"frame {frame_number:06d}", fill=(255, 255, 255))
+        sheet.save(output_dir / name)
+
+    save_contact_sheet(conditioning_images, "conditioning_contact_sheet.png")
+    save_contact_sheet(overlay_images, "diagnostic_overlay_contact_sheet.png")
 
     payload = {
         "schema_version": 1,
@@ -117,7 +124,15 @@ def create_sequence_preview(
         "camera": camera,
         "frames": frame_payloads,
         "temporal_deltas": _temporal_deltas(frame_payloads),
-        "outputs": ["overlay.gif", "conditioning.gif", "temporal_contact_sheet.png"],
+        "model_conditioning_output": "conditioning.gif",
+        "model_conditioning_frames": [
+            f"frame-{frame_number:06d}/conditioning.png" for frame_number in frame_numbers
+        ],
+        "diagnostic_outputs": [
+            "overlay.gif",
+            "conditioning_contact_sheet.png",
+            "diagnostic_overlay_contact_sheet.png",
+        ],
     }
     (output_dir / "sequence_metadata.json").write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -162,7 +177,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "camera": payload["camera"],
                 "frame_count": len(payload["frames"]),
                 "temporal_comparisons": len(payload["temporal_deltas"]),
-                "outputs": payload["outputs"],
+                "model_conditioning_output": payload["model_conditioning_output"],
+                "diagnostic_outputs": payload["diagnostic_outputs"],
             },
             indent=2,
             sort_keys=True,

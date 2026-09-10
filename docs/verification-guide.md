@@ -45,7 +45,9 @@ PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.geometry.preview \
   --output-dir /tmp/or-geometry-preview
 ```
 
-Inspect `/tmp/or-geometry-preview/comparison.png` and `metadata.json`. This smoke
+`conditioning.png` is the model input: a black canvas containing only filled
+ellipses. Inspect `comparison.png` and `overlay.png` only as diagnostics for mask
+alignment; they must never enter the diffusion pipeline. This smoke
 test deliberately uses MMOR sensor depth to validate alignment and rendering; it
 does **not** replace Video Depth Anything in the reproduction. Reject the output
 if ellipses badly mismatch masks, class colors change, depth ordering is reversed,
@@ -62,7 +64,9 @@ PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.geometry.sequence_preview \
   --output-dir /tmp/or-geometry-sequence
 ```
 
-Inspect `overlay.gif`, `conditioning.gif`, and `temporal_contact_sheet.png`.
+Inspect `conditioning.gif` and `conditioning_contact_sheet.png` as the actual
+conditioning representation. `overlay.gif` and
+`diagnostic_overlay_contact_sheet.png` exist only to verify alignment against RGB.
 `sequence_metadata.json` reports per-class center, axis, and angle changes between
 neighboring annotations. These are diagnostic values rather than hard pass/fail
 thresholds because the paper does not specify temporal smoothing and 1-fps motion

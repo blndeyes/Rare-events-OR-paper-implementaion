@@ -145,10 +145,10 @@ def create_preview(
             for instance in instances
         ],
         "skipped_labels": skipped,
-        "outputs": [
+        "model_conditioning_output": "conditioning.png",
+        "diagnostic_outputs": [
             "source.png",
             "semantic_mask.png",
-            "conditioning.png",
             "overlay.png",
             "comparison.png",
         ],

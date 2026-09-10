@@ -95,8 +95,19 @@ class PreviewTests(unittest.TestCase):
 
             self.assertEqual(len(payload["instances"]), 1)
             self.assertEqual(payload["instances"][0]["class_name"], "patient")
-            for name in (*payload["outputs"], "metadata.json"):
+            expected_files = (
+                payload["model_conditioning_output"],
+                *payload["diagnostic_outputs"],
+                "metadata.json",
+            )
+            for name in expected_files:
                 self.assertTrue((root / "output" / name).is_file(), name)
+
+            conditioning = np.asarray(
+                Image.open(root / "output" / payload["model_conditioning_output"])
+            )
+            self.assertTrue(np.all(conditioning[0, 0] == 0))
+            self.assertGreater(np.count_nonzero(conditioning), 0)
 
     def test_temporal_deltas_handle_axis_angle_wraparound(self) -> None:
         frames = [

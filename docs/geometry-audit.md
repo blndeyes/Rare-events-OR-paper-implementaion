@@ -14,6 +14,9 @@
   labels create ellipses; predicate codes remain reserved vocabulary entries.
 - Blue encodes min-max-normalized mean instance depth, with nearer mapped to 255.
 - Ellipses are drawn far-to-near with deterministic class/key tie breaking.
+- The production artifact is exclusively the black-canvas ellipse image. Source
+  frames, masks, comparison sheets, and translucent overlays are diagnostics and
+  are explicitly excluded from the model-conditioning output contract.
 
 The ellipse fit, red/green palette, normalization scope, and near/blue direction
 are reproduction hypotheses because the target paper does not disclose those
