@@ -56,8 +56,17 @@ Audited source snapshots:
 
 - MM-OR: `defe55b855d603a3a64b219bfee2d3b729875a6d` (27 August 2025)
 - 4D-OR: `2685e61539897409ea8df59f7097faf1a41ca3f1` (29 March 2025)
+- LTX-Video inference: `20799e51cd739986d98d9b1aab55cc2067c1eabb`
+  (8 July 2025), a legacy snapshot retaining the 13B 0.9.7-dev configuration and
+  multi-keyframe conditioning interface.
+- Video Depth Anything: `4f5ae23172ba60fd7bc11ef671cca678842c7072`
+  (7 October 2025); relative-depth ViT-L is selected from the official default CLI.
+- SAM2: `2b90b9f5ceec907a1c18123530e92e794ad901a4`
+  (15 December 2024); SAM 2.1 Hiera Large is selected from the official video example.
 
 These are reproducible audit snapshots, not claims about the unreleased author code.
+The VDA and SAM2 sizes are official-default hypotheses because the target paper only
+says the models are used out of the box.
 
 The official MM-OR source at `defe55b855d603a3a64b219bfee2d3b729875a6d`
 documents 22 physical directories representing 39 logical takes. Its published

@@ -1,0 +1,21 @@
+# Reproducible official upstream snapshots selected before the target paper release.
+ltx_video_inference:
+  repository: https://github.com/Lightricks/ltx-video
+  commit: 20799e51cd739986d98d9b1aab55cc2067c1eabb
+  reason: last audited legacy snapshot retaining the official 0.9.7-dev configuration
+  checkpoint: ltxv-13b-0.9.7-dev.safetensors
+  spatial_upscaler: ltxv-spatial-upscaler-0.9.7.safetensors
+
+video_depth_anything:
+  repository: https://github.com/DepthAnything/Video-Depth-Anything
+  commit: 4f5ae23172ba60fd7bc11ef671cca678842c7072
+  mode: relative
+  encoder: vitl
+  selection_basis: official relative-depth inference default; paper does not name model size
+
+sam2:
+  repository: https://github.com/facebookresearch/sam2
+  commit: 2b90b9f5ceec907a1c18123530e92e794ad901a4
+  checkpoint: sam2.1_hiera_large.pt
+  config: configs/sam2.1/sam2.1_hiera_l.yaml
+  selection_basis: official video-predictor example; paper does not name model size

@@ -29,6 +29,19 @@ The tests must pass, and the semantic command must report 21 entities, 15
 predicates, and 36 labels. Inventory reports should agree with the committed
 dataset audit. Differences are a stop condition, not something to train through.
 
+Build the paper-shaped smoke clip manifest without copying dataset frames:
+
+```bash
+OR_PYTHON=/home/irtaza/anaconda3/bin/python
+PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.data.clips \
+  --root /home/irtaza/dump/or-datasets/MM-OR_processed \
+  --take 001_PKA --camera 1 --start-timestamp 0 --split smoke \
+  --output /tmp/mmor-smoke-clip.json
+```
+
+The output must contain five distinct RGB keyframes assigned to generated-frame
+indices 0, 24, 48, 72, and 96, plus an existing first-frame ground-truth mask.
+
 ## Run now that geometry has landed: inspect actual pictures
 
 Create a one-frame plumbing preview from MMOR camera 1 (replace `FRAME` with an
