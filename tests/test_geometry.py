@@ -15,6 +15,7 @@ from or_video_reproduction.geometry.ellipse import Ellipse, fit_ellipse, rasteri
 from or_video_reproduction.geometry.palette import PAPER_36_PALETTE, decode_red_green
 from or_video_reproduction.geometry.preview import create_preview
 from or_video_reproduction.geometry.render import RenderInstance, render_conditioning
+from or_video_reproduction.geometry.sequence_preview import _temporal_deltas
 
 
 def angular_error_mod_180(actual: float, expected: float) -> float:
@@ -96,6 +97,47 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(payload["instances"][0]["class_name"], "patient")
             for name in (*payload["outputs"], "metadata.json"):
                 self.assertTrue((root / "output" / name).is_file(), name)
+
+    def test_temporal_deltas_handle_axis_angle_wraparound(self) -> None:
+        frames = [
+            {
+                "frame": 1,
+                "instances": [
+                    {
+                        "class_name": "patient",
+                        "ellipse": {
+                            "center_x": 10.0,
+                            "center_y": 20.0,
+                            "major_diameter": 40.0,
+                            "minor_diameter": 20.0,
+                            "angle_degrees": 179.0,
+                        },
+                    }
+                ],
+            },
+            {
+                "frame": 2,
+                "instances": [
+                    {
+                        "class_name": "patient",
+                        "ellipse": {
+                            "center_x": 13.0,
+                            "center_y": 24.0,
+                            "major_diameter": 44.0,
+                            "minor_diameter": 18.0,
+                            "angle_degrees": 1.0,
+                        },
+                    }
+                ],
+            },
+        ]
+
+        delta = _temporal_deltas(frames)[0]
+
+        self.assertEqual(delta["center_displacement_pixels"], 5.0)
+        self.assertAlmostEqual(delta["major_diameter_ratio"], 1.1)
+        self.assertAlmostEqual(delta["minor_diameter_ratio"], 0.9)
+        self.assertEqual(delta["angle_delta_degrees"], 2.0)
 
 
 if __name__ == "__main__":

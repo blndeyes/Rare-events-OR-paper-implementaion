@@ -50,6 +50,21 @@ if ellipses badly mismatch masks, class colors change, depth ordering is reverse
 or any predicate appears as a standalone ellipse. A multi-frame temporal preview
 will be the next gate after the one-frame output passes.
 
+After the one-frame preview passes, render five consecutive 1-fps annotations:
+
+```bash
+PYTHONPATH=src python3 -m or_video_reproduction.geometry.sequence_preview \
+  --root /home/irtaza/dump/or-datasets/MM-OR_processed \
+  --procedure 001_PKA --camera 1 --start-frame 329 --count 5 \
+  --output-dir /tmp/or-geometry-sequence
+```
+
+Inspect `overlay.gif`, `conditioning.gif`, and `temporal_contact_sheet.png`.
+`sequence_metadata.json` reports per-class center, axis, and angle changes between
+neighboring annotations. These are diagnostic values rather than hard pass/fail
+thresholds because the paper does not specify temporal smoothing and 1-fps motion
+can legitimately be large.
+
 ## Run after model integration: cheap GPU checks
 
 In order: one-batch forward/backward, inference from one real conditioning clip,

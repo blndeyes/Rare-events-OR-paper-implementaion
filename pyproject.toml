@@ -24,6 +24,7 @@ dev = [
 or-dataset-inventory = "or_video_reproduction.data.inventory:main"
 or-mmor-semantics = "or_video_reproduction.data.semantics:main"
 or-geometry-preview = "or_video_reproduction.geometry.preview:main"
+or-geometry-sequence-preview = "or_video_reproduction.geometry.sequence_preview:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
