@@ -50,6 +50,7 @@ committed.
 
 ## Project documents
 
+- [Current reproduction progress](docs/progress.md)
 - [Reproduction plan](docs/reproduction-plan.md)
 - [Source audit](docs/source-audit.md)
 - [Dataset audit](docs/dataset-audit.md)
