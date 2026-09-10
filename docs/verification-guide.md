@@ -42,6 +42,24 @@ PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.data.clips \
 The output must contain five distinct RGB keyframes assigned to generated-frame
 indices 0, 24, 48, 72, and 96, plus an existing first-frame ground-truth mask.
 
+Create an auditable LTX interpolation plan before executing it:
+
+```bash
+PYTHONPATH=src "$OR_PYTHON" -m or_video_reproduction.preprocessing.ltx_interpolation \
+  --manifest /tmp/mmor-smoke-clip.json \
+  --dataset-root /home/irtaza/dump/or-datasets/MM-OR_processed \
+  --ltx-root /home/irtaza/Work/or-reproduction-upstreams/ltx-video \
+  --python /home/irtaza/Work/or-reproduction-envs/ltx097/bin/python \
+  --output-dir /tmp/mmor-ltx-interpolation \
+  --prompt "Fixed overhead surveillance view of an operating room." \
+  --seed 42 --plan-output /tmp/mmor-ltx-interpolation-plan.json
+```
+
+The prompt and seed are explicit smoke-test hypotheses, not values disclosed by the
+paper. Add `--execute` only after reviewing the plan and confirming model weights are
+available; the launcher then uses the pinned official 0.9.7-dev pipeline with CPU
+offload.
+
 ## Run now that geometry has landed: inspect actual pictures
 
 Create a one-frame plumbing preview from MMOR camera 1 (replace `FRAME` with an

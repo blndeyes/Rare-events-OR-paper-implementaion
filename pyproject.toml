@@ -26,6 +26,7 @@ or-mmor-semantics = "or_video_reproduction.data.semantics:main"
 or-geometry-preview = "or_video_reproduction.geometry.preview:main"
 or-geometry-sequence-preview = "or_video_reproduction.geometry.sequence_preview:main"
 or-build-mmor-clip = "or_video_reproduction.data.clips:main"
+or-plan-ltx-interpolation = "or_video_reproduction.preprocessing.ltx_interpolation:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
