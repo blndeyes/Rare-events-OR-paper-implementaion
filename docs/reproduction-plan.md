@@ -49,6 +49,11 @@ source-frame sequences, not prebuilt 97-frame, 24-fps clips. Reproducing the aut
 338 examples therefore requires a separate, still-undetermined event-clipping and
 interpolation recipe.
 
+The first complete inventory is recorded in [the dataset audit](dataset-audit.md).
+Timestamp-to-file integrity passes for both datasets. Exact clip construction and the
+paper's stated 36-class palette do not yet pass and remain hard gates before bulk
+preprocessing.
+
 The paper used one NVIDIA A100 but does not state its memory capacity. Any 4090
 memory accommodation must preserve the paper's effective optimization settings and be
 recorded with each run.

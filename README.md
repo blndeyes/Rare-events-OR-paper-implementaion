@@ -51,5 +51,7 @@ committed.
 
 - [Reproduction plan](docs/reproduction-plan.md)
 - [Source audit](docs/source-audit.md)
+- [Dataset audit](docs/dataset-audit.md)
 - [Ambiguities register](docs/ambiguities.md)
+- [Supervisor questions](docs/supervisor-questions.md)
 - [Agent project brief](docs/agent-prompt.md)

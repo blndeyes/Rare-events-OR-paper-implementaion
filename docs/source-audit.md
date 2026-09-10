@@ -4,7 +4,13 @@
 
 - *Towards Controllable Video Synthesis of Routine and Rare OR Events*
 - arXiv:2602.21365v1, released 24 February 2026
-- Implementation-relevant content: Sections 3 and 4, Figures 1-3, Tables 1 and 4
+- All 14 pages reviewed; implementation-relevant content is concentrated in Sections
+  3 and 4, Figures 1-3, and Tables 1 and 4.
+
+The paper supplies no supplementary implementation appendix or released source link.
+Its PatchGAN description is limited to naming the added loss and citing pix2pix. Table
+4 establishes that the full Base+ellipse+depth+PatchGAN variant improves FVD from
+532.05 to 487.20 on the 50-video ablation, but does not disclose how the loss is built.
 
 ## Official LTX sources
 
@@ -43,8 +49,15 @@ template value is tracked as an upstream-default inference rather than a paper f
 - SAM2: <https://github.com/facebookresearch/sam2>
 - Video Depth Anything: <https://github.com/DepthAnything/Video-Depth-Anything>
 
-Exact revisions for these sources remain to be selected after inspecting dataset
-metadata and release chronology.
+Exact author-used revisions are undisclosed. Reproducible audit snapshots are pinned
+below; SAM2 and Video Depth Anything model variants still require selection.
+
+Audited source snapshots:
+
+- MM-OR: `defe55b855d603a3a64b219bfee2d3b729875a6d` (27 August 2025)
+- 4D-OR: `2685e61539897409ea8df59f7097faf1a41ca3f1` (29 March 2025)
+
+These are reproducible audit snapshots, not claims about the unreleased author code.
 
 The official MM-OR source at `defe55b855d603a3a64b219bfee2d3b729875a6d`
 documents 22 physical directories representing 39 logical takes. Its published
