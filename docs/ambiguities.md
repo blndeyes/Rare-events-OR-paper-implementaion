@@ -34,6 +34,9 @@ Status values: `open`, `hypothesis`, `resolved`, or `blocked`.
   `nurse --holding--> instrument`; they do not own masks. The 36-label vocabulary may
   reserve red/green codes for all labels, but only the 21 entity labels may create
   ellipse instances unless later paper evidence discloses a relation-rendering rule.
+  Section 3 strengthens this constraint by defining predicates as implicit edges and
+  ellipse nodes as entities. Its separate phrase "36 semantic classes" for entity
+  colors remains inconsistent with the public 21/22/23-entity MMOR vocabularies.
 - **Memory lower bound:** the inferred 13B checkpoint is roughly 26 GB in bfloat16,
   before activations or optimizer state, and therefore cannot fit unmodified on the
   24.6 GB 4090. Quantized frozen base weights or CPU offload will be required and must

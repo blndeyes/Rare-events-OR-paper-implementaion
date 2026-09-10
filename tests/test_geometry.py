@@ -74,6 +74,13 @@ class RenderTests(unittest.TestCase):
 
         self.assertEqual(tuple(image[10, 10]), (*PAPER_36_PALETTE["patient"], 255))
 
+    def test_predicate_cannot_be_rendered_as_an_ellipse(self) -> None:
+        ellipse = Ellipse(10.0, 10.0, 10.0, 8.0, 0.0, 30)
+        predicate = RenderInstance("edge", "holding", ellipse, 0.5, 2.0)
+
+        with self.assertRaisesRegex(ValueError, "Only segmented entity nodes"):
+            render_conditioning([predicate], (24, 24), smaller_is_nearer=True)
+
 
 class PreviewTests(unittest.TestCase):
     def test_writes_auditable_preview_bundle(self) -> None:

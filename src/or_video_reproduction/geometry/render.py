@@ -7,6 +7,8 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from or_video_reproduction.data.semantics import ENTITY_CLASSES
+
 from .depth import depth_to_blue
 from .ellipse import Ellipse, rasterize_ellipse
 from .palette import PAPER_36_PALETTE
@@ -40,6 +42,11 @@ def render_conditioning(
         return depth_key, instance.class_name, instance.key
 
     for instance in sorted(instances, key=drawing_key):
+        if instance.class_name not in ENTITY_CLASSES:
+            raise ValueError(
+                f"Only segmented entity nodes may be rendered as ellipses; got "
+                f"{instance.class_name!r}"
+            )
         try:
             red, green = PAPER_36_PALETTE[instance.class_name]
         except KeyError as error:
