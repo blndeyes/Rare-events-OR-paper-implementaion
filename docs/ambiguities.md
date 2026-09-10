@@ -14,7 +14,6 @@ Status values: `open`, `hypothesis`, `resolved`, or `blocked`.
 | Ellipse fit | open | Centroid, height, width, angle are stated; fitting algorithm and conventions are omitted. |
 | Depth normalization | open | Averaging within instance masks is stated; normalization scope and direction are omitted. |
 | PatchGAN | blocked | Architecture, receptive field, inputs, loss, coefficient, and optimization schedule are absent. Escalate questions to the user's supervisor if public evidence is insufficient. |
-| Optimizer details | hypothesis | Matching official config gives batch 1, accumulation 1, clipping 1.0, linear scheduler, and seed 42. AdamW betas/weight decay still require code inspection. |
+| Optimizer details | resolved | Pinned trainer passes only LR to PyTorch AdamW: betas `(0.9, 0.999)`, epsilon `1e-8`, weight decay `0.01`. LinearLR decays 1.0 to 0.1 over all steps with no warmup. These are upstream defaults, not paper facts. |
 | Metric implementations | open | Exact FVD backbone/library, spatial preprocessing, temporal sampling, and per-video aggregation are absent. |
 | 4090 memory plan | open | The inferred 13B model doubles tokens for IC-LoRA and may exceed 24 GB despite gradient checkpointing. Measure preprocessing and one batch before altering effective optimization. |
-

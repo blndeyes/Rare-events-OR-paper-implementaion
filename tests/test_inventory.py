@@ -2,7 +2,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from or_video_reproduction.data.inventory import inventory_mmor
+import json
+
+from or_video_reproduction.data.inventory import inventory_4dor, inventory_mmor
 
 
 def touch_many(directory: Path, names: list[str]) -> None:
@@ -48,6 +50,15 @@ class MmorInventoryTests(unittest.TestCase):
             self.assertEqual(
                 inventory["procedures"][0]["annotation_file_counts"]["panoptic_seg_1"], 2
             )
+            procedure_row = inventory["procedures"][0]
+            self.assertEqual(
+                procedure_row["modalities"]["colorimage"]["extensions"],
+                {"jpg": 2, "png": 1},
+            )
+            self.assertEqual(
+                procedure_row["correspondence"]["panoptic_seg_1:camera01"]["coverage"],
+                1.0,
+            )
 
     def test_ignores_nonprocedure_directories(self) -> None:
         with TemporaryDirectory() as directory:
@@ -65,6 +76,75 @@ class MmorInventoryTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             with self.assertRaisesRegex(FileNotFoundError, "MMOR root is not a directory"):
                 inventory_mmor(Path(directory) / "missing")
+
+
+class FourDorInventoryTests(unittest.TestCase):
+    def test_resolves_nested_root_and_checks_timestamp_correspondence(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            take = root / "4D-OR" / "export_holistic_take1_processed"
+            touch_many(
+                take / "colorimage",
+                [
+                    "camera01_colorimage-000010.jpg",
+                    "camera01_colorimage-000011.jpg",
+                    "camera02_colorimage-000020.jpg",
+                ],
+            )
+            touch_many(
+                take / "depthimage",
+                [
+                    "camera01_depthimage-000030.tiff",
+                    "camera02_depthimage-000040.tiff",
+                ],
+            )
+            touch_many(take / "pcds", ["000000.pcd", "000001.pcd"])
+            touch_many(take / "annotations", ["000000.json"])
+            timestamps = [
+                [
+                    "1.0",
+                    {
+                        "color_1": "000010",
+                        "depth_1": "000030",
+                        "color_2": "000020",
+                        "depth_2": "000040",
+                        "pcd": "000000",
+                    },
+                ],
+                [
+                    "2.0",
+                    {
+                        "color_1": "000099",
+                        "depth_1": "000098",
+                        "pcd": "000001",
+                    },
+                ],
+            ]
+            (take / "timestamp_to_pcd_and_frames_list.json").write_text(
+                json.dumps(timestamps), encoding="utf-8"
+            )
+
+            inventory = inventory_4dor(root)
+
+            self.assertEqual(inventory["take_count"], 1)
+            self.assertEqual(inventory["camera_frame_totals"], {"01": 2, "02": 1})
+            take_row = inventory["takes"][0]
+            self.assertEqual(take_row["pcd_count"], 2)
+            self.assertEqual(take_row["annotation_count"], 1)
+            self.assertEqual(
+                take_row["timestamp_correspondence"]["01"]["color"]["matched"], 1
+            )
+            self.assertEqual(
+                take_row["timestamp_correspondence"]["01"]["color"][
+                    "missing_from_candidate"
+                ],
+                1,
+            )
+
+    def test_rejects_root_without_takes(self) -> None:
+        with TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(FileNotFoundError, "No export_holistic"):
+                inventory_4dor(Path(directory))
 
 
 if __name__ == "__main__":

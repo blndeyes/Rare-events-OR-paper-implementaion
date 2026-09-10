@@ -25,14 +25,24 @@ pytest
 
 ## Dataset inventory
 
-The inventory command reads filenames and metadata only; it does not alter the
-dataset.
+The inventory commands read filenames and metadata only; they do not alter the
+datasets.
 
 ```bash
 python -m or_video_reproduction.data.inventory mmor \
   --root /home/irtaza/dump/or-datasets/MM-OR_processed \
-  --output artifacts/inventory/mmor.json
+  --output /tmp/mmor-inventory.json \
+  --report /tmp/mmor-inventory.md
+
+python -m or_video_reproduction.data.inventory 4dor \
+  --root /home/irtaza/dump/or-datasets/4D-OR_full \
+  --output /tmp/4dor-inventory.json \
+  --report /tmp/4dor-inventory.md
 ```
+
+The reports include sequence gaps, modality counts, JSON validity, and
+timestamp-to-frame correspondence. Keep outputs outside the repository because they
+contain machine-specific paths and dataset-derived metadata.
 
 Data, model weights, generated media, cached latents, and credentials must never be
 committed.

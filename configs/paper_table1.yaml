@@ -43,16 +43,23 @@ training:
   steps: 8000
   learning_rate: 0.0002
   optimizer: AdamW
+  # PyTorch AdamW defaults used implicitly by the pinned trainer.
+  optimizer_betas: [0.9, 0.999]
+  optimizer_epsilon: 1.0e-8
+  weight_decay: 0.01
   batch_size: 1
   gradient_accumulation_steps: 1
   max_grad_norm: 1.0
   mixed_precision: bf16
   first_frame_conditioning_probability: 0.2
   scheduler: linear
+  # Pinned trainer uses LinearLR with no warmup, decaying over all 8,000 steps.
+  scheduler_start_factor: 1.0
+  scheduler_end_factor: 0.1
+  warmup_steps: 0
   timestep_sampling: shifted_logit_normal
   gradient_checkpointing: true
   text_encoder_8bit: false
-  weight_decay: null
   patchgan:
     enabled: true
     architecture: null

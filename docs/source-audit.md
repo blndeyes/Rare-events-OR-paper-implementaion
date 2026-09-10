@@ -19,6 +19,19 @@ AdamW, bfloat16, 50 inference steps, and guidance scale 3.5. It supplies likely
 defaults omitted by the paper: batch size 1, accumulation 1, clipping 1.0, linear
 scheduler, gradient checkpointing, shifted-logit-normal timestep sampling, and seed 42.
 
+Direct inspection of the pinned source resolved the remaining optimizer mechanics:
+
+- `torch.optim.AdamW` is constructed with only the configured learning rate, so the
+  PyTorch defaults apply: betas `(0.9, 0.999)`, epsilon `1e-8`, and weight decay `0.01`.
+- `LinearLR` starts at the configured learning rate and decays to 10% over the full
+  configured step count. There is no warmup.
+- IC-LoRA concatenates clean reference-video latents before noisy target latents.
+  Reference tokens have timestep zero and are excluded from the flow-matching MSE.
+  When first-frame conditioning is sampled, the first target-frame tokens are also
+  clean, timestep zero, and excluded from loss.
+- The lockfile resolves PyTorch 2.6.0, torchvision 0.21.0, diffusers 0.33.1,
+  accelerate 1.2.1, PEFT 0.14.0, and transformers 4.52.2.
+
 The paper changes at least two values from the template: training increases from 2,000
 to 8,000 steps, and video dimensions become 1024x768 with 97 frames. Therefore each
 template value is tracked as an upstream-default inference rather than a paper fact.
@@ -32,6 +45,13 @@ template value is tracked as an upstream-default inference rather than a paper f
 
 Exact revisions for these sources remain to be selected after inspecting dataset
 metadata and release chronology.
+
+The official MM-OR source at `defe55b855d603a3a64b219bfee2d3b729875a6d`
+documents 22 physical directories representing 39 logical takes. Its published
+panoptic split is train 10 takes, validation 3, test 4, plus 22 short clips; this is
+useful evidence but does not prove that the video-synthesis paper used the same split.
+The official 4D-OR source currently uses take split train `[1,3,5,7,9,10]`, validation
+`[4,8]`, test `[2,6]`.
 
 ## Remote audit, 10 September 2026
 
