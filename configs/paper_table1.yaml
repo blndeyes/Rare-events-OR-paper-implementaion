@@ -2,7 +2,8 @@
 # Unknown fields remain null instead of being silently inferred.
 experiment:
   name: paper_table1_ours
-  seed: null
+  # Inferred from the matching official IC-LoRA config; not stated in the paper.
+  seed: 42
   target_resolution: [1024, 768]
   frames: 97
   output_fps: 24
@@ -20,25 +21,37 @@ data:
 model:
   family: LTX-Video
   trainer: LTX-Video-Trainer
-  checkpoint: null
-  upstream_commit: null
+  # Strongly inferred from the official 13B IC-LoRA config matching every
+  # paper-stated trainer hyperparameter. The paper does not name the checkpoint.
+  checkpoint: LTXV_13B_097_DEV
+  upstream_commit: e055182fa36dba6f48eb0919aef09d277da30fbd
   training_mode: lora
   conditioning_mode: reference_video
   lora:
     rank: 128
     alpha: 128
-    dropout: null
-    target_modules: null
+    dropout: 0.0
+    target_modules:
+      - to_k
+      - to_q
+      - to_v
+      - to_out.0
+      - ff.net.0.proj
+      - ff.net.2
 
 training:
   steps: 8000
   learning_rate: 0.0002
   optimizer: AdamW
-  batch_size: null
-  gradient_accumulation_steps: null
+  batch_size: 1
+  gradient_accumulation_steps: 1
+  max_grad_norm: 1.0
   mixed_precision: bf16
   first_frame_conditioning_probability: 0.2
-  scheduler: null
+  scheduler: linear
+  timestep_sampling: shifted_logit_normal
+  gradient_checkpointing: true
+  text_encoder_8bit: false
   weight_decay: null
   patchgan:
     enabled: true
@@ -62,4 +75,3 @@ targets:
     SSIM: 0.90
     PSNR: 25.87
     LPIPS: 0.07
-

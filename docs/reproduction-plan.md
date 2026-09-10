@@ -43,6 +43,12 @@ evaluation data.
 - Host memory: 125 GiB; dataset filesystem has approximately 1.3 TiB free.
 - Remote data: approximately 489 GiB MMOR and 153 GiB 4DOR.
 
+The remote MMOR extraction contains 22 top-level procedure directories and five
+camera streams with approximately 63,535 frames per camera. These are contiguous
+source-frame sequences, not prebuilt 97-frame, 24-fps clips. Reproducing the authors'
+338 examples therefore requires a separate, still-undetermined event-clipping and
+interpolation recipe.
+
 The paper used one NVIDIA A100 but does not state its memory capacity. Any 4090
 memory accommodation must preserve the paper's effective optimization settings and be
 recorded with each run.
@@ -57,3 +63,12 @@ recorded with each run.
 - Dataset files, weights, credentials, cached latents, and generated videos stay outside
   Git.
 
+## Upstream baseline
+
+The reproducible trainer baseline is the official legacy
+`Lightricks/LTX-Video-Trainer` at commit
+`e055182fa36dba6f48eb0919aef09d277da30fbd`, the last commit before the paper's
+24 February 2026 release. Its `ltxv_13b_ic_lora.yaml` configuration matches all
+paper-stated trainer values and identifies `LTXV_13B_097_DEV`. This is compelling
+evidence for the 13B 0.9.7 development checkpoint, but remains an inference because
+the paper does not state the checkpoint or source revision.

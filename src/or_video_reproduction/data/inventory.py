@@ -76,7 +76,10 @@ def inventory_mmor(root: Path) -> dict[str, object]:
             child.name: _count_files(child)
             for child in sorted(procedure.iterdir())
             if child.is_dir()
-            and (child.name.startswith("panoptic_seg_") or child.name.startswith("segmentation_export_"))
+            and (
+                child.name.startswith("panoptic_seg_")
+                or child.name.startswith("segmentation_export_")
+            )
         }
         procedure_rows.append(
             {
@@ -131,4 +134,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -40,5 +40,6 @@ committed.
 ## Project documents
 
 - [Reproduction plan](docs/reproduction-plan.md)
+- [Source audit](docs/source-audit.md)
 - [Ambiguities register](docs/ambiguities.md)
 - [Agent project brief](docs/agent-prompt.md)
