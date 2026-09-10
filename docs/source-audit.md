@@ -90,6 +90,10 @@ The official 4D-OR source currently uses take split train `[1,3,5,7,9,10]`, vali
   on this GPU: 23.48 GiB was in use and the next 32 MiB allocation failed. The
   official 0.9.7-dev FP8 checkpoint is therefore the documented smoke-test fallback;
   the target paper does not disclose its interpolation checkpoint precision.
+- The legacy inference factory transfers the transformer, VAE, and text encoder to
+  CUDA before its runtime `offload_to_cpu` path. The tracked sequential-offload patch
+  activates the pipeline's declared Diffusers offload sequence during construction;
+  it is a host-compatibility patch against the pinned source, not an author-code claim.
 
 The first MMOR filename inventory found 22 top-level procedure directories and five
 camera streams totaling approximately 63,535 contiguous frames per camera. Panoptic

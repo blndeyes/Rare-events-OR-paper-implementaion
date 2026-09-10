@@ -63,6 +63,10 @@ was already in use when a further 32 MiB allocation failed). For this host, add
 `--precision fp8` to select the official 0.9.7-dev FP8 checkpoint. This is an explicit
 hardware accommodation, not a paper-disclosed precision choice; it leaves the model
 version, five-keyframe contract, resolution, frame count, and frame rate unchanged.
+The pinned legacy launcher also moves every component to CUDA before its own offload
+logic can run. Apply `patches/ltx-video-0.9.7-sequential-offload.patch` to the clean,
+pinned LTX checkout. The patch activates the pipeline's already-declared sequential
+offload order only when `--offload_to_cpu` is set; non-offloaded behavior is unchanged.
 
 ## Run now that geometry has landed: inspect actual pictures
 

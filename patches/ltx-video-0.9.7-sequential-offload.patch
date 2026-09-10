@@ -1,0 +1,46 @@
+diff --git a/ltx_video/inference.py b/ltx_video/inference.py
+index e510238..6532fd3 100644
+--- a/ltx_video/inference.py
++++ b/ltx_video/inference.py
+@@ -193,6 +193,7 @@ def create_ltx_video_pipeline(
+     prompt_enhancer_image_caption_model_name_or_path: Optional[str] = None,
+     prompt_enhancer_llm_model_name_or_path: Optional[str] = None,
++    offload_to_cpu: bool = False,
+ ) -> LTXVideoPipeline:
+@@ -222,9 +223,10 @@ def create_ltx_video_pipeline(
+         text_encoder_model_name_or_path, subfolder="tokenizer"
+     )
+ 
+-    transformer = transformer.to(device)
+-    vae = vae.to(device)
+-    text_encoder = text_encoder.to(device)
++    if not offload_to_cpu:
++        transformer = transformer.to(device)
++        vae = vae.to(device)
++        text_encoder = text_encoder.to(device)
+@@ -270,7 +272,11 @@ def create_ltx_video_pipeline(
+     }
+ 
+     pipeline = LTXVideoPipeline(**submodel_dict)
+-    pipeline = pipeline.to(device)
++    if offload_to_cpu:
++        pipeline.enable_model_cpu_offload(device=device)
++    else:
++        pipeline = pipeline.to(device)
+     return pipeline
+@@ -490,11 +496,13 @@ def infer(config: InferenceConfig):
+         enhance_prompt=enhance_prompt,
+         prompt_enhancer_image_caption_model_name_or_path=prompt_enhancer_image_caption_model_name_or_path,
+         prompt_enhancer_llm_model_name_or_path=prompt_enhancer_llm_model_name_or_path,
++        offload_to_cpu=offload_to_cpu,
+     )
+ 
+     if pipeline_config.get("pipeline_type", None) == "multi-scale":
+@@ -494,7 +502,7 @@ def infer(config: InferenceConfig):
+                 "spatial upscaler model path is missing from pipeline config file and is required for multi-scale rendering"
+             )
+         latent_upsampler = create_latent_upsampler(
+-            spatial_upscaler_model_path, pipeline.device
++            spatial_upscaler_model_path, device
+         )
+         pipeline = LTXMultiScalePipeline(pipeline, latent_upsampler=latent_upsampler)
