@@ -94,6 +94,10 @@ The official 4D-OR source currently uses take split train `[1,3,5,7,9,10]`, vali
   CUDA before its runtime `offload_to_cpu` path. The tracked sequential-offload patch
   activates the pipeline's declared Diffusers offload sequence during construction;
   it is a host-compatibility patch against the pinned source, not an author-code claim.
+- Multi-keyframe inference explicitly rejects prompt enhancement and returns the
+  original prompt, yet the 0.9.7 config loads and retains both enhancer models. The
+  tracked FP8 config patch disables this ineffective path, preserving the prompt while
+  avoiding roughly 10.7 GiB of otherwise stranded GPU allocation.
 
 The first MMOR filename inventory found 22 top-level procedure directories and five
 camera streams totaling approximately 63,535 contiguous frames per camera. Panoptic

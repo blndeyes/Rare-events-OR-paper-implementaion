@@ -67,6 +67,11 @@ The pinned legacy launcher also moves every component to CUDA before its own off
 logic can run. Apply `patches/ltx-video-0.9.7-sequential-offload.patch` to the clean,
 pinned LTX checkout. The patch activates the pipeline's already-declared sequential
 offload order only when `--offload_to_cpu` is set; non-offloaded behavior is unchanged.
+For FP8 multi-keyframe interpolation, also apply
+`patches/ltx-video-0.9.7-disable-multikeyframe-prompt-enhancement.patch`. The upstream
+pipeline reports that enhancement is unsupported with multiple conditioning items and
+returns the original prompt, but otherwise retains the unused enhancer models on GPU.
+Disabling that dead path preserves the effective prompt and frees about 10.7 GiB.
 
 ## Run now that geometry has landed: inspect actual pictures
 
