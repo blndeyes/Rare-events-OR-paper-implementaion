@@ -37,7 +37,8 @@ def alignment_report(paper: dict[str, object], official: dict[str, object]) -> d
         "lora_rank": official["lora"]["rank"] == model["lora"]["rank"],
         "lora_alpha": official["lora"]["alpha"] == model["lora"]["alpha"],
         "lora_targets": official["lora"]["target_modules"] == model["lora"]["target_modules"],
-        "learning_rate": official["optimization"]["learning_rate"] == training["learning_rate"],
+        "learning_rate": float(official["optimization"]["learning_rate"])
+        == float(training["learning_rate"]),
         "batch_size": official["optimization"]["batch_size"] == training["batch_size"],
         "first_frame_probability": official["conditioning"]["first_frame_conditioning_p"]
         == training["first_frame_conditioning_probability"],

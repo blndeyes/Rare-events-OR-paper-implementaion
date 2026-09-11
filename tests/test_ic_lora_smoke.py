@@ -23,7 +23,7 @@ OFFICIAL = {
     "model": {"model_source": "LTXV_13B_097_DEV", "training_mode": "lora"},
     "conditioning": {"mode": "reference_video", "first_frame_conditioning_p": 0.2},
     "lora": {"rank": 128, "alpha": 128, "target_modules": ["to_q"]},
-    "optimization": {"learning_rate": 2e-4, "batch_size": 1},
+    "optimization": {"learning_rate": "2e-4", "batch_size": 1},
     "acceleration": {"mixed_precision_mode": "bf16"},
     "validation": {"inference_steps": 50, "guidance_scale": 3.5},
 }
