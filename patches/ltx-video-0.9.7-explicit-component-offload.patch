@@ -80,10 +80,11 @@ index 243f4a3..d90ab3a 100644
  
          else:
              image = latents
-@@ -1823,1 +1835,2 @@ class LTXMultiScalePipeline:
+@@ -1823,4 +1835,9 @@ class LTXMultiScalePipeline:
 +        self.latent_upsampler.to(latents.device)
          upsampled_latents = self._upsample_latents(self.latent_upsampler, latents)
-@@ -1826,1 +1839,5 @@ class LTXMultiScalePipeline:
+         upsampled_latents = adain_filter_latent(
+             latents=upsampled_latents, reference_latents=latents
          )
 +        if kwargs.get("offload_to_cpu"):
 +            self.latent_upsampler.cpu()
