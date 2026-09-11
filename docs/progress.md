@@ -44,8 +44,8 @@
 - A persistent resumable LTX batch runner now loads the interpolation pipeline once
   instead of repeating model initialization for every clip.
 - Official IC-LoRA preprocessing and a real one-step integration gate are complete.
-- All 32 repository tests passed on `IRTAZAPC` on 2026-09-11 at implementation commit
-  `54fcb11` before packaging the one-step runner.
+- All 33 repository tests passed on `IRTAZAPC` on 2026-09-11 at implementation commit
+  `52290dc`.
 
 ## Work in progress
 
@@ -126,6 +126,6 @@ step produced a checkpoint; INT8 and INT4 both reached model execution but exhau
 ## Latest update
 
 - **Date:** 2026-09-11 (Asia/Karachi)
-- **Verified implementation commit:** `54fcb11` (one-step runner packaging pending)
-- **Remote verification:** `IRTAZAPC` passed all 32 tests, produced validated 97-frame
+- **Verified implementation commit:** `52290dc`
+- **Remote verification:** `IRTAZAPC` passed all 33 tests, produced validated 97-frame
   preprocessing artifacts, and completed one quantized IC-LoRA optimizer step.
