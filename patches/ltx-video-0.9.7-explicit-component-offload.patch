@@ -1,5 +1,5 @@
 diff --git a/ltx_video/pipelines/pipeline_ltx_video.py b/ltx_video/pipelines/pipeline_ltx_video.py
-index 243f4a3..d90ab3a 100644
+index 243f4a3..034210c 100644
 --- a/ltx_video/pipelines/pipeline_ltx_video.py
 +++ b/ltx_video/pipelines/pipeline_ltx_video.py
 @@ -902,7 +902,7 @@ class LTXVideoPipeline(DiffusionPipeline):
@@ -80,7 +80,10 @@ index 243f4a3..d90ab3a 100644
  
          else:
              image = latents
-@@ -1823,4 +1835,9 @@ class LTXMultiScalePipeline:
+@@ -1820,10 +1832,15 @@ class LTXMultiScalePipeline:
+         result = self.video_pipeline(*args, **kwargs)
+         latents = result.images
+ 
 +        self.latent_upsampler.to(latents.device)
          upsampled_latents = self._upsample_latents(self.latent_upsampler, latents)
          upsampled_latents = adain_filter_latent(
@@ -90,3 +93,6 @@ index 243f4a3..d90ab3a 100644
 +            self.latent_upsampler.cpu()
 +            if latents.device.type == "cuda":
 +                torch.cuda.empty_cache()
+ 
+         kwargs = original_kwargs
+ 
