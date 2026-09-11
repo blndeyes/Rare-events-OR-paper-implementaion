@@ -135,3 +135,10 @@ The pinned Video Depth Anything checkout is run in the shared preprocessing runt
 requirements pin. Matplotlib 3.11 removed `cm.get_cmap`; the tracked compatibility
 patch uses the equivalent `cm.inferno` object and avoids constructing a colormap for
 grayscale output. This affects visualization saving only, not predicted depths.
+
+The official ViT-L relative-depth model completed the same 97-frame smoke clip in
+five chunks. The saved float32 array has shape `(97, 768, 1024)`, contains only finite
+values, and ranges from 12.609 to 3146.822. Its visualization decodes as 97 frames at
+24 fps and 1024x768. Visual inspection shows temporally stable room structure with
+people and nearby equipment separated from the background, so the VDA smoke gate
+passes. Absolute values are model-relative and must not be interpreted as metric depth.
