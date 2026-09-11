@@ -51,8 +51,8 @@
 - A deterministic split builder can construct 338/50 manifests, but writes them only
   after explicit acknowledgement that the undisclosed selection is a hypothesis.
 - Official IC-LoRA preprocessing and a real one-step integration gate are complete.
-- All 48 repository tests passed on `IRTAZAPC` on 2026-09-11 at implementation commit
-  `3ecdad9`.
+- All 49 repository tests passed on `IRTAZAPC` on 2026-09-11 at implementation commit
+  `ef2176d`.
 
 ## Work in progress
 
@@ -137,6 +137,6 @@ overfit gate has not passed. No Table 1 metric has been produced.
 ## Latest update
 
 - **Date:** 2026-09-11 (Asia/Karachi)
-- **Verified implementation commit:** `3ecdad9`
-- **Remote verification:** `IRTAZAPC` passed all 48 tests; the real geometry batch
+- **Verified implementation commit:** `ef2176d`
+- **Remote verification:** `IRTAZAPC` passed all 49 tests; the real geometry batch
   completed once and skipped valid outputs on rerun.

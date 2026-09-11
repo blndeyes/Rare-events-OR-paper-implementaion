@@ -52,7 +52,11 @@ def load_geometry_jobs(
         if not status_path.is_file():
             raise FileNotFoundError(f"Missing LTX status for {source.clip_id}: {status_path}")
         status = _read_json(status_path)
-        if status.get("state") not in {"completed", "skipped_valid_existing"}:
+        if status.get("state") not in {
+            "completed",
+            "skipped_valid_existing",
+            "discovered_valid_existing",
+        }:
             raise ValueError(f"LTX output for {source.clip_id} is not complete")
         target_video = Path(status["output"])
         if not target_video.is_absolute():
@@ -156,16 +160,17 @@ def run_geometry_batch(
                     **existing_report["paths"],
                 }
             )
-            _write_json_atomic(
-                status_path,
-                {
-                    "schema_version": 1,
-                    "state": "skipped_valid_existing",
-                    "clip_id": job.clip_id,
-                    "job_index": index,
-                    "validation": existing_report,
-                },
-            )
+            if not status_path.is_file():
+                _write_json_atomic(
+                    status_path,
+                    {
+                        "schema_version": 1,
+                        "state": "discovered_valid_existing",
+                        "clip_id": job.clip_id,
+                        "job_index": index,
+                        "validation": existing_report,
+                    },
+                )
             continue
 
         stages: list[str] = []

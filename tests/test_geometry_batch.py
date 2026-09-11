@@ -20,6 +20,37 @@ class FakeRunner:
 
 
 class GeometryBatchTests(unittest.TestCase):
+    def test_valid_rerun_preserves_original_completion_status(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            clip_dir = root / "output/clip"
+            clip_dir.mkdir(parents=True)
+            status_path = clip_dir / "status.json"
+            original = {"schema_version": 1, "state": "completed", "elapsed_seconds": 12.5}
+            status_path.write_text(json.dumps(original), encoding="utf-8")
+            job = GeometryJob("clip", root / "m", root / "v", root / "mask", "train")
+            valid = {
+                "state": "passed",
+                "paths": {
+                    "target_video": "v",
+                    "conditioning_video": "c",
+                    "labels": "l",
+                    "depths": "d",
+                    "geometry_metadata": "g",
+                },
+            }
+            with patch.object(geometry_batch, "validate_pair", return_value=valid):
+                report = run_geometry_batch(
+                    [job],
+                    output_root=root / "output",
+                    vda_factory=lambda: self.fail("VDA must not load"),
+                    sam2_factory=lambda: self.fail("SAM2 must not load"),
+                )
+            preserved = json.loads(status_path.read_text())
+
+        self.assertEqual(report["counts"]["skipped"], 1)
+        self.assertEqual(preserved, original)
+
     def test_reuses_models_and_records_completed_pairs(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -104,4 +135,3 @@ class GeometryBatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

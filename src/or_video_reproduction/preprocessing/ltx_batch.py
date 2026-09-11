@@ -194,16 +194,17 @@ def run_batch(
         ]
         if valid_existing:
             counts["skipped"] += 1
-            _write_status(
-                status_path,
-                {
-                    "schema_version": 1,
-                    "state": "skipped_valid_existing",
-                    "clip_id": job.clip_id,
-                    "output": str(valid_existing[-1]),
-                    "job_index": job_index,
-                },
-            )
+            if not status_path.is_file():
+                _write_status(
+                    status_path,
+                    {
+                        "schema_version": 1,
+                        "state": "discovered_valid_existing",
+                        "clip_id": job.clip_id,
+                        "output": str(valid_existing[-1]),
+                        "job_index": job_index,
+                    },
+                )
             continue
 
         started = time.time()
