@@ -30,6 +30,7 @@ or-plan-ltx-interpolation = "or_video_reproduction.preprocessing.ltx_interpolati
 or-propagate-sam2 = "or_video_reproduction.preprocessing.sam2_propagation:main"
 or-render-geometry-sequence = "or_video_reproduction.geometry.render_sequence:main"
 or-run-ltx-batch = "or_video_reproduction.preprocessing.ltx_batch:main"
+or-smoke-ic-lora = "or_video_reproduction.training.ic_lora_smoke:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

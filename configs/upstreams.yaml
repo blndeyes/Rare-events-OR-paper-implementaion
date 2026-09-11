@@ -6,6 +6,13 @@ ltx_video_inference:
   checkpoint: ltxv-13b-0.9.7-dev.safetensors
   spatial_upscaler: ltxv-spatial-upscaler-0.9.7.safetensors
 
+ltx_video_trainer:
+  repository: https://github.com/Lightricks/LTX-Video-Trainer
+  commit: e055182fa36dba6f48eb0919aef09d277da30fbd
+  config: configs/ltxv_13b_ic_lora.yaml
+  checkpoint: LTXV_13B_097_DEV
+  selection_basis: last official legacy-trainer commit before the target paper release
+
 video_depth_anything:
   repository: https://github.com/DepthAnything/Video-Depth-Anything
   commit: 4f5ae23172ba60fd7bc11ef671cca678842c7072
