@@ -99,6 +99,9 @@ The official 4D-OR source currently uses take split train `[1,3,5,7,9,10]`, vali
   producing a BF16-input/FP8-weight mismatch at the first attention projection on the
   RTX 4090. The tracked factory patch enables the pipeline's existing BF16 autocast
   for the official FP8 precision value; a direct CUDA linear-layer probe passes.
+- First-pass FP8 denoising completes, then the multi-scale upsampler reads per-channel
+  VAE statistics after that VAE has been offloaded. The tracked latent-normalization
+  patch moves those unchanged statistics to the latent device before arithmetic.
 - Multi-keyframe inference explicitly rejects prompt enhancement and returns the
   original prompt, yet the 0.9.7 config loads and retains both enhancer models. The
   tracked FP8 config patch disables this ineffective path, preserving the prompt while

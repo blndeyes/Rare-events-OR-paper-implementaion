@@ -73,6 +73,10 @@ Non-offloaded behavior is unchanged. The factory patch also routes the official
 `float8_e4m3fn` precision through the pipeline's existing BF16 autocast block.
 Without it, the first attention projection receives BF16 activations and FP8 weights
 and fails before denoising step one.
+Apply `patches/ltx-video-0.9.7-latent-normalization-device.patch` as the final host
+patch. After first-pass offload, the multi-scale upsampler otherwise combines CUDA
+latents with VAE normalization buffers on CPU. The patch copies only those small
+statistics to the latent device and does not alter their values.
 For FP8 multi-keyframe interpolation, also apply
 `patches/ltx-video-0.9.7-disable-multikeyframe-prompt-enhancement.patch`. The upstream
 pipeline reports that enhancement is unsupported with multiple conditioning items and
