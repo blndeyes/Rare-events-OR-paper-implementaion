@@ -12,6 +12,7 @@ from or_video_reproduction.preprocessing.validate_pairs import (
     load_pair_jobs,
     validate_geometry_metadata,
     validate_label_and_depth_arrays,
+    validate_batch,
     validate_pair,
 )
 from or_video_reproduction.geometry.palette import PAPER_36_PALETTE
@@ -114,6 +115,21 @@ class PairValidationTests(unittest.TestCase):
             with patch.object(pair_validation, "EXPECTED_SHAPE", small_shape):
                 result = validate_pair(job, video_probe=lambda _: expected)
         self.assertEqual(result["state"], "passed")
+
+    def test_batch_report_records_failures_atomically(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            missing = root / "missing"
+            job = PairJob("broken", missing, missing, missing, missing, missing)
+            output = root / "validation.json"
+            failed = {"clip_id": "broken", "state": "failed", "error_type": "TestError"}
+            with patch.object(pair_validation, "validate_pair", return_value=failed):
+                report = validate_batch([job], output)
+            saved = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(report["state"], "failed")
+        self.assertEqual(report["counts"], {"passed": 0, "failed": 1})
+        self.assertEqual(saved["samples"][0]["error_type"], "TestError")
 
 
 if __name__ == "__main__":
