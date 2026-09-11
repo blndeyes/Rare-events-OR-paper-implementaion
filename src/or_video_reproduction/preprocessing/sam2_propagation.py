@@ -69,37 +69,21 @@ def compose_label_frame(
     return labels
 
 
-def propagate_first_frame_mask(
+def _propagate_with_predictor(
+    predictor,
     video_path: Path,
     first_mask_path: Path,
-    sam2_root: Path,
-    checkpoint_path: Path,
     output_path: Path,
     *,
-    verify_revision: bool = True,
+    checkpoint_path: Path,
 ) -> dict[str, object]:
-    if verify_revision:
-        actual_commit = _git_head(sam2_root)
-        if actual_commit != PINNED_SAM2_COMMIT:
-            raise ValueError(
-                f"SAM2 revision mismatch: expected {PINNED_SAM2_COMMIT}, got {actual_commit}"
-            )
     if not video_path.is_file():
         raise FileNotFoundError(video_path)
     if not first_mask_path.is_file():
         raise FileNotFoundError(first_mask_path)
-    if not checkpoint_path.is_file():
-        raise FileNotFoundError(checkpoint_path)
 
     import torch
-    from sam2.build_sam import build_sam2_video_predictor
 
-    predictor = build_sam2_video_predictor(
-        SAM2_CONFIG,
-        str(checkpoint_path),
-        device="cuda",
-        vos_optimized=False,
-    )
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
         state = predictor.init_state(
             str(video_path),
@@ -157,11 +141,71 @@ def propagate_first_frame_mask(
         "overlap_resolution": "maximum positive SAM2 mask logit; otherwise background",
         "frame_zero_policy": "preserve resized ground-truth label map exactly",
         "memory_policy": "offload video frames and inference state to CPU",
+        "model_reuse": "one loaded predictor may process multiple clips",
     }
     output_path.with_suffix(".json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return metadata
+
+
+class Sam2VideoRunner:
+    """Keep one official SAM2.1 Hiera Large predictor loaded across clips."""
+
+    def __init__(
+        self,
+        sam2_root: Path,
+        checkpoint_path: Path,
+        *,
+        verify_revision: bool = True,
+    ) -> None:
+        if verify_revision:
+            actual_commit = _git_head(sam2_root)
+            if actual_commit != PINNED_SAM2_COMMIT:
+                raise ValueError(
+                    f"SAM2 revision mismatch: expected {PINNED_SAM2_COMMIT}, "
+                    f"got {actual_commit}"
+                )
+        if not checkpoint_path.is_file():
+            raise FileNotFoundError(checkpoint_path)
+
+        from sam2.build_sam import build_sam2_video_predictor
+
+        self.predictor = build_sam2_video_predictor(
+            SAM2_CONFIG,
+            str(checkpoint_path),
+            device="cuda",
+            vos_optimized=False,
+        )
+        self.checkpoint_path = checkpoint_path
+
+    def run(
+        self, video_path: Path, first_mask_path: Path, output_path: Path
+    ) -> dict[str, object]:
+        return _propagate_with_predictor(
+            self.predictor,
+            video_path,
+            first_mask_path,
+            output_path,
+            checkpoint_path=self.checkpoint_path,
+        )
+
+
+def propagate_first_frame_mask(
+    video_path: Path,
+    first_mask_path: Path,
+    sam2_root: Path,
+    checkpoint_path: Path,
+    output_path: Path,
+    *,
+    verify_revision: bool = True,
+) -> dict[str, object]:
+    runner = Sam2VideoRunner(
+        sam2_root,
+        checkpoint_path,
+        verify_revision=verify_revision,
+    )
+    return runner.run(video_path, first_mask_path, output_path)
 
 
 def build_parser() -> argparse.ArgumentParser:
