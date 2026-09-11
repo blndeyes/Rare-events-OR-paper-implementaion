@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import types
 from typing import Sequence
 
 import numpy as np
@@ -81,6 +82,9 @@ class VideoDepthRunner:
         for module_name in list(sys.modules):
             if module_name == "utils" or module_name.startswith("utils."):
                 del sys.modules[module_name]
+        vda_utils = types.ModuleType("utils")
+        vda_utils.__path__ = [str(vda_root / "utils")]
+        sys.modules["utils"] = vda_utils
         sys.path.insert(0, str(vda_root))
         import torch
         from utils.dc_utils import read_video_frames
