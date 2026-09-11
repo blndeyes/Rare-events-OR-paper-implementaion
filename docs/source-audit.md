@@ -159,3 +159,18 @@ a black canvas containing only three filled ellipses. Larger VDA output is treat
 nearer: on frame zero, entity mean VDA predictions increase as the corresponding MMOR
 sensor distances generally decrease. This direction and per-frame min-max normalization
 remain explicitly recorded reproduction hypotheses because the paper omits both details.
+
+## IC-LoRA construction gate, 11 September 2026
+
+The official trainer checkout at `e055182f...` was installed from its frozen lockfile.
+All twelve disclosed or strongly matched configuration fields agree with
+`configs/paper_table1.yaml` after numeric YAML normalization. The official 13B
+transformer constructs in BF16 with 13,042,569,344 base parameters, and the exact
+rank-128 target list adds 654,311,424 trainable LoRA parameters (5.017%).
+
+The BF16 base weights alone require at least 24.294 GiB, exceeding the RTX 4090 before
+gradients, optimizer state, or activations. This is a hardware blocker for an unchanged
+single-GPU run, not a model mismatch. As an explicitly non-paper fallback, the official
+trainer's INT8-Quanto weight mode successfully places the same transformer and LoRA on
+the GPU using 13.518 GiB allocated memory. A real one-batch forward/backward gate is
+still required before accepting that fallback for training.

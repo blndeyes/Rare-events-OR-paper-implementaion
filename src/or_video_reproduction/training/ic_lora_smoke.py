@@ -58,6 +58,8 @@ def run_smoke(
     output_path: Path,
     *,
     load_transformer: bool,
+    quantization: str | None = None,
+    place_on_cuda: bool = False,
 ) -> dict[str, object]:
     if _git_head(trainer_root) != PINNED_TRAINER_COMMIT:
         raise ValueError(f"Trainer checkout must be pinned to {PINNED_TRAINER_COMMIT}")
@@ -95,6 +97,7 @@ def run_smoke(
         from peft import LoraConfig
         from ltxv_trainer.config import LtxvTrainerConfig
         from ltxv_trainer.model_loader import load_transformer as load_official_transformer
+        from ltxv_trainer.quantization import quantize_model
 
         config = LtxvTrainerConfig(**official)
         started = time.time()
@@ -103,6 +106,8 @@ def run_smoke(
             dtype=torch.bfloat16,
         )
         base_parameters = sum(parameter.numel() for parameter in transformer.parameters())
+        if quantization is not None:
+            transformer = quantize_model(transformer, quantization)
         transformer.requires_grad_(False)
         transformer.add_adapter(
             LoraConfig(
@@ -116,6 +121,18 @@ def run_smoke(
         trainable_parameters = sum(
             parameter.numel() for parameter in transformer.parameters() if parameter.requires_grad
         )
+        cuda_memory: dict[str, float] = {}
+        if place_on_cuda:
+            if not torch.cuda.is_available():
+                raise RuntimeError("CUDA placement requested but CUDA is unavailable")
+            torch.cuda.reset_peak_memory_stats()
+            transformer.to("cuda")
+            torch.cuda.synchronize()
+            cuda_memory = {
+                "cuda_allocated_gib": torch.cuda.memory_allocated() / 1024**3,
+                "cuda_reserved_gib": torch.cuda.memory_reserved() / 1024**3,
+                "cuda_peak_allocated_gib": torch.cuda.max_memory_allocated() / 1024**3,
+            }
         report.update(
             {
                 "model_constructed": True,
@@ -124,7 +141,10 @@ def run_smoke(
                 "trainable_percent": 100.0 * trainable_parameters / base_parameters,
                 "base_dtype": str(next(transformer.parameters()).dtype),
                 "minimum_base_weight_gib": base_parameters * 2 / 1024**3,
+                "quantization": quantization,
+                "placed_on_cuda": place_on_cuda,
                 "elapsed_seconds": round(time.time() - started, 3),
+                **cuda_memory,
             }
         )
 
@@ -139,16 +159,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trainer-root", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--load-transformer", action="store_true")
+    parser.add_argument(
+        "--quantization",
+        choices=("int8-quanto", "int4-quanto", "int2-quanto", "fp8-quanto", "fp8uz-quanto"),
+    )
+    parser.add_argument("--place-on-cuda", action="store_true")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if (args.quantization or args.place_on_cuda) and not args.load_transformer:
+        raise ValueError("quantization and CUDA placement require --load-transformer")
     report = run_smoke(
         args.paper_config,
         args.trainer_root,
         args.output,
         load_transformer=args.load_transformer,
+        quantization=args.quantization,
+        place_on_cuda=args.place_on_cuda,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0

@@ -9,8 +9,8 @@
   97-frame ellipse-only conditioning video.
 - **Current blocker:** the authors' exact 338 training clips, 50 ablation clips, camera
   choices, and event boundaries are undisclosed.
-- **Next action:** build a persistent resumable batch runner before scaling preprocessing
-  toward 338 clips, then begin the IC-LoRA integration gate.
+- **Next action:** preprocess one paired target/ellipse sample into official trainer
+  latents, then attempt one INT8-Quanto forward/backward step on the RTX 4090.
 
 ## Area status
 
@@ -24,7 +24,7 @@
 | LTX temporal interpolation | `passed` | 97 frames at 24 fps and 1024x768; anchor PSNR 28.82--32.94 dB and SSIM 0.9038--0.9517 | Build persistent resumable batch runner |
 | SAM2 propagation | `passed` | 97 masks at about 18 fps; anchor entity IoU 0.868--1.000 | Integrate into resumable batch runner |
 | Video Depth Anything | `passed` | ViT-L float32 `(97, 768, 1024)` output; finite values and valid 97-frame visualization | Feed result to sequence geometry renderer |
-| IC-LoRA training | `not_started` | Trainer/checkpoint hypothesis pinned | Wait for preprocessing correctness gates |
+| IC-LoRA training | `in_progress` | BF16 13B + rank-128 LoRA constructs; INT8 placement uses 13.518 GiB | Run one paired forward/backward step |
 | PatchGAN | `blocked` | Paper omits architecture, inputs, loss, weight, and schedule | Seek supervisor guidance; keep optional and isolated |
 | Table 1 evaluation | `not_started` | Exact test clips and metric implementations are unresolved | Freeze manifests and metric contract before evaluation |
 | Experiment registry | `not_started` | No registry file or run records in the repository | Add schema before the first model execution |
@@ -46,15 +46,15 @@
 
 ## Work in progress
 
-- Build a persistent preprocessing runner that loads heavyweight models once, validates
-  existing outputs, and resumes after per-clip failures.
+- Build one official paired latent sample and measure a forward/backward step with the
+  documented INT8-Quanto hardware fallback.
 - Keep the smoke clip separate from any future frozen training or evaluation split.
 
 ## Next three prioritized actions
 
-1. Build a persistent, resumable preprocessing runner before scaling toward 338 clips.
-2. Add a versioned run registry with per-stage timings and validation outcomes.
-3. Begin the cheapest official IC-LoRA model-construction smoke gate without training.
+1. Preprocess one target/ellipse video pair into the official trainer's latent format.
+2. Attempt one INT8-Quanto forward/backward step and record peak VRAM.
+3. Add a versioned run registry with per-stage timings and validation outcomes.
 
 ## Blockers and questions requiring supervisor input
 
@@ -112,6 +112,7 @@ and quantitative reproduction success.
 - Remote VDA output: `/tmp/mmor-vda-vitl`
 - Remote SAM2 output: `/tmp/mmor-sam2-vitl`
 - Remote ellipse conditioning: `/tmp/mmor-ellipse-conditioning`
+- Remote IC-LoRA construction report: `/tmp/ic-lora-construction-smoke.json`
 
 ## Latest update
 
