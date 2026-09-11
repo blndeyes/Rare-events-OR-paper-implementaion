@@ -10,6 +10,7 @@ import traceback
 from typing import Sequence
 
 from .ic_lora_smoke import PINNED_TRAINER_COMMIT, _git_head
+from .profiles import TrainingProfile, load_training_profile
 
 
 def build_one_step_config(
@@ -46,9 +47,7 @@ def run_one_step(
     output_dir: Path,
     report_path: Path,
     *,
-    quantization: str,
-    mixed_precision: str,
-    transformer_load_dtype: str,
+    profile: TrainingProfile,
 ) -> dict[str, object]:
     if _git_head(trainer_root) != PINNED_TRAINER_COMMIT:
         raise ValueError(f"Trainer checkout must be pinned to {PINNED_TRAINER_COMMIT}")
@@ -65,15 +64,15 @@ def run_one_step(
         paper,
         precomputed_root=precomputed_root,
         output_dir=output_dir,
-        quantization=quantization,
-        mixed_precision=mixed_precision,
+        quantization=profile.quantization,
+        mixed_precision=profile.mixed_precision,
     )
 
     sys.path.insert(0, str(trainer_root / "src"))
     from ltxv_trainer.config import LtxvTrainerConfig
     import ltxv_trainer.trainer as trainer_module
 
-    if transformer_load_dtype == "fp16":
+    if profile.transformer_load_dtype == "fp16":
         official_loader = trainer_module.load_ltxv_components
 
         def load_fp16_components(*args, **kwargs):
@@ -106,11 +105,12 @@ def run_one_step(
             "trainer_revision": PINNED_TRAINER_COMMIT,
             "precomputed_root": str(precomputed_root),
             "paper_video_dims": effective["validation"]["video_dims"],
-            "quantization": quantization,
-            "mixed_precision": mixed_precision,
-            "transformer_load_dtype": transformer_load_dtype,
-            "paper_deviation": quantization != "no_change"
-            or mixed_precision != paper["training"]["mixed_precision"],
+            "profile": profile.name,
+            "profile_description": profile.description,
+            "quantization": profile.quantization,
+            "mixed_precision": profile.mixed_precision,
+            "transformer_load_dtype": profile.transformer_load_dtype,
+            "paper_deviation": not profile.paper_faithful,
             "peak_allocated_gib": torch.cuda.max_memory_allocated() / 1024**3,
             "peak_reserved_gib": torch.cuda.max_memory_reserved() / 1024**3,
         }
@@ -128,26 +128,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument(
-        "--quantization",
-        required=True,
-        choices=("no_change", "int8-quanto", "int4-quanto", "int2-quanto"),
+        "--profiles-config",
+        type=Path,
+        default=Path("configs/training_profiles.yaml"),
     )
-    parser.add_argument("--mixed-precision", choices=("bf16", "fp16"), default="bf16")
-    parser.add_argument("--transformer-load-dtype", choices=("bf16", "fp16"), default="bf16")
+    parser.add_argument("--profile", required=True)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    profile = load_training_profile(args.profiles_config, args.profile)
     report = run_one_step(
         args.paper_config,
         args.trainer_root,
         args.precomputed_root,
         args.output_dir,
         args.report,
-        quantization=args.quantization,
-        mixed_precision=args.mixed_precision,
-        transformer_load_dtype=args.transformer_load_dtype,
+        profile=profile,
     )
     print(json.dumps(report, indent=2, default=str))
     return 0 if report["state"] == "passed" else 1

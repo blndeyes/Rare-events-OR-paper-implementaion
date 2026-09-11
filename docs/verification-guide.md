@@ -159,11 +159,15 @@ PYTHONPATH="src:$TRAINER_ROOT/src" "$TRAINER_PYTHON" \
   --precomputed-root /tmp/mmor-ic-lora-paired/.precomputed \
   --output-dir /tmp/mmor-ic-lora-one-step-int2 \
   --report /tmp/mmor-ic-lora-one-step-int2-report.json \
-  --quantization int2-quanto --mixed-precision bf16
+  --profile rtx4090_integration_int2
 ```
 
 INT2 is a hardware plumbing test, not the paper-faithful training configuration. Do
 not start the 8,000-step run with it and report the result as a faithful reproduction.
+On suitable hardware, switch the same gate to the paper-compatible configuration with
+`--profile faithful_bf16`. The named profiles live in
+`configs/training_profiles.yaml` and are reusable by the full training launcher; the
+faithful profile is validated to reject quantization and non-BF16 dtypes.
 
 ## Run last: full experiment
 

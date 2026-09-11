@@ -1,0 +1,17 @@
+schema_version: 1
+
+profiles:
+  faithful_bf16:
+    description: Paper-compatible BF16 training with unchanged base-model weights.
+    quantization: no_change
+    mixed_precision: bf16
+    transformer_load_dtype: bf16
+    paper_faithful: true
+
+  rtx4090_integration_int2:
+    description: Memory-reduced plumbing test for the audited 24 GiB RTX 4090.
+    quantization: int2-quanto
+    mixed_precision: bf16
+    transformer_load_dtype: bf16
+    paper_faithful: false
+
