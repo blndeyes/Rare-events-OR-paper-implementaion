@@ -170,7 +170,16 @@ rank-128 target list adds 654,311,424 trainable LoRA parameters (5.017%).
 
 The BF16 base weights alone require at least 24.294 GiB, exceeding the RTX 4090 before
 gradients, optimizer state, or activations. This is a hardware blocker for an unchanged
-single-GPU run, not a model mismatch. As an explicitly non-paper fallback, the official
-trainer's INT8-Quanto weight mode successfully places the same transformer and LoRA on
-the GPU using 13.518 GiB allocated memory. A real one-batch forward/backward gate is
-still required before accepting that fallback for training.
+single-GPU run, not a model mismatch. As explicitly non-paper fallbacks, the official
+trainer's Quanto modes were tested without changing the 1024x768x97 input, rank-128
+LoRA, optimizer, or paired-reference data path.
+
+The official preprocessing pipeline successfully encoded one real target/ellipse pair.
+Both target and reference video latents have shape `(9984, 128)` with 13 latent frames,
+height 24, and width 32; prompt embeddings have shape `(256, 4096)`. INT8 reached the
+forward pass but ran out of memory at 22.840 GiB allocated. INT4 reached backward
+recomputation but ran out of memory at 22.429 GiB allocated. INT2 completed a full
+forward pass, backward pass, AdamW update, and saved rank-128 LoRA weights. That step
+took 25.94 seconds after model initialization and peaked at 21.392 GiB allocated and
+23.043 GiB reserved. This proves the complete integration path, but INT2 remains a
+severe reproduction deviation and is not accepted as the faithful training precision.

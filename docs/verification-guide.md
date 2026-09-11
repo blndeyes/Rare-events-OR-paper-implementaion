@@ -143,6 +143,28 @@ then a tiny-subset overfit. Check that loss is finite, LoRA parameters receive
 gradients, frozen base weights do not, and the overfit output visibly responds to
 geometry. Only then enable the optional PatchGAN path.
 
+The one-batch runner is `or-run-ic-lora-one-step`. It consumes data already encoded by
+the pinned official trainer and writes a machine-readable report even when CUDA runs
+out of memory. On the audited RTX 4090, unchanged BF16 cannot place the base model;
+INT8 and INT4 also exhaust memory during the step. The following integration-only
+fallback completed, including an AdamW update and LoRA checkpoint save:
+
+```bash
+TRAINER_ROOT=/home/irtaza/Work/or-reproduction-upstreams/LTX-Video-Trainer
+TRAINER_PYTHON="$TRAINER_ROOT/.venv/bin/python"
+PYTHONPATH="src:$TRAINER_ROOT/src" "$TRAINER_PYTHON" \
+  -m or_video_reproduction.training.one_step \
+  --paper-config configs/paper_table1.yaml \
+  --trainer-root "$TRAINER_ROOT" \
+  --precomputed-root /tmp/mmor-ic-lora-paired/.precomputed \
+  --output-dir /tmp/mmor-ic-lora-one-step-int2 \
+  --report /tmp/mmor-ic-lora-one-step-int2-report.json \
+  --quantization int2-quanto --mixed-precision bf16
+```
+
+INT2 is a hardware plumbing test, not the paper-faithful training configuration. Do
+not start the 8,000-step run with it and report the result as a faithful reproduction.
+
 ## Run last: full experiment
 
 Start the 8,000-step training only after the clip manifest, geometry rendering,

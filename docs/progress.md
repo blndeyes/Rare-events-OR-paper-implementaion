@@ -3,14 +3,14 @@
 ## Status
 
 - **Overall:** `in_progress`
-- **Current phase:** MMOR clip reconstruction and 97-frame preprocessing smoke test
-- **Latest verified accomplishment:** the complete paper-ordered preprocessing chain
-  passes on one real clip: LTX interpolation, VDA depth, SAM2 propagation, and a
-  97-frame ellipse-only conditioning video.
-- **Current blocker:** the authors' exact 338 training clips, 50 ablation clips, camera
-  choices, and event boundaries are undisclosed.
-- **Next action:** preprocess one paired target/ellipse sample into official trainer
-  latents, then attempt one INT8-Quanto forward/backward step on the RTX 4090.
+- **Current phase:** training-hardware decision and frozen clip-manifest construction
+- **Latest verified accomplishment:** one real target/ellipse pair passes official
+  latent preprocessing and a complete IC-LoRA optimizer step, including checkpoint
+  saving, with the documented INT2-Quanto integration fallback.
+- **Current blockers:** faithful BF16 training does not fit the 24 GiB RTX 4090, and the
+  authors' exact 338 training clips, camera choices, and event boundaries are undisclosed.
+- **Next action:** select larger/multi-GPU or offloaded hardware for faithful BF16, and
+  freeze a clearly labeled reproduction policy for the 338 training clips.
 
 ## Area status
 
@@ -21,10 +21,10 @@
 | Exact 338/50 clip construction | `blocked` | Public metadata rules yield 336 or 277, not 338 | Obtain supervisor guidance or freeze a labeled reproduction policy |
 | Frozen train/evaluation manifests | `not_started` | `configs/paper_table1.yaml` still has `split_manifest: null` | Create after clip policy is settled |
 | Ellipse and semantic rendering | `passed` | 97-frame 1024x768 black-canvas conditioning MP4 and contact sheet | Preserve exact representation in training loader |
-| LTX temporal interpolation | `passed` | 97 frames at 24 fps and 1024x768; anchor PSNR 28.82--32.94 dB and SSIM 0.9038--0.9517 | Build persistent resumable batch runner |
+| LTX temporal interpolation | `passed` | 97 frames at 24 fps and 1024x768; anchor PSNR 28.82--32.94 dB and SSIM 0.9038--0.9517 | Use persistent resumable batch runner after manifests freeze |
 | SAM2 propagation | `passed` | 97 masks at about 18 fps; anchor entity IoU 0.868--1.000 | Integrate into resumable batch runner |
 | Video Depth Anything | `passed` | ViT-L float32 `(97, 768, 1024)` output; finite values and valid 97-frame visualization | Feed result to sequence geometry renderer |
-| IC-LoRA training | `in_progress` | BF16 13B + rank-128 LoRA constructs; INT8 placement uses 13.518 GiB | Run one paired forward/backward step |
+| IC-LoRA training | `hardware_blocked` | Official pair preprocessing passes; INT2 completes one optimizer step, while INT8/INT4 OOM | Move faithful BF16 run to larger/multi-GPU or validated offload |
 | PatchGAN | `blocked` | Paper omits architecture, inputs, loss, weight, and schedule | Seek supervisor guidance; keep optional and isolated |
 | Table 1 evaluation | `not_started` | Exact test clips and metric implementations are unresolved | Freeze manifests and metric contract before evaluation |
 | Experiment registry | `not_started` | No registry file or run records in the repository | Add schema before the first model execution |
@@ -41,20 +41,25 @@
   camera 1, timestamps 0-4 (Azure frames 000329-000333).
 - Official upstream snapshots are pinned for LTX-Video inference, LTX-Video Trainer,
   SAM2, Video Depth Anything, MMOR, and 4DOR.
-- All 28 repository tests passed on `IRTAZAPC` on 2026-09-11 at implementation commit
-  `eff19cb`.
+- A persistent resumable LTX batch runner now loads the interpolation pipeline once
+  instead of repeating model initialization for every clip.
+- Official IC-LoRA preprocessing and a real one-step integration gate are complete.
+- All 32 repository tests passed on `IRTAZAPC` on 2026-09-11 at implementation commit
+  `54fcb11` before packaging the one-step runner.
 
 ## Work in progress
 
-- Build one official paired latent sample and measure a forward/backward step with the
-  documented INT8-Quanto hardware fallback.
+- Package the verified one-step hardware gate and keep its quantized modes explicitly
+  separated from the faithful BF16 experiment.
 - Keep the smoke clip separate from any future frozen training or evaluation split.
 
 ## Next three prioritized actions
 
-1. Preprocess one target/ellipse video pair into the official trainer's latent format.
-2. Attempt one INT8-Quanto forward/backward step and record peak VRAM.
-3. Add a versioned run registry with per-stage timings and validation outcomes.
+1. Choose faithful-training hardware: at least a larger GPU, multiple GPUs, or a
+   separately validated offload strategy.
+2. Freeze a labeled 338-clip reproduction manifest after resolving the undisclosed
+   clip-selection policy.
+3. Run a tiny-subset overfit before any 8,000-step experiment.
 
 ## Blockers and questions requiring supervisor input
 
@@ -82,10 +87,10 @@ or inferred details remain classified in `docs/ambiguities.md`.
 ## Experiments and results
 
 The complete preprocessing chain has run successfully on one smoke clip: LTX
-interpolation, Video Depth Anything, SAM2, and ellipse-only sequence rendering. No
-IC-LoRA training checkpoint or Table 1 metric has been produced. The experiment
-registry must distinguish execution success, correctness checks, qualitative quality,
-and quantitative reproduction success.
+interpolation, Video Depth Anything, SAM2, ellipse-only sequence rendering, and
+official target/reference latent encoding. A single INT2-Quanto IC-LoRA optimizer
+step produced a checkpoint; INT8 and INT4 both reached model execution but exhausted
+24 GiB VRAM. No faithful BF16 training checkpoint or Table 1 metric has been produced.
 
 ## Reproduction risks
 
@@ -113,10 +118,14 @@ and quantitative reproduction success.
 - Remote SAM2 output: `/tmp/mmor-sam2-vitl`
 - Remote ellipse conditioning: `/tmp/mmor-ellipse-conditioning`
 - Remote IC-LoRA construction report: `/tmp/ic-lora-construction-smoke.json`
+- Remote paired trainer data: `/tmp/mmor-ic-lora-paired`
+- Remote one-step reports: `/tmp/mmor-ic-lora-one-step-report.json`,
+  `/tmp/mmor-ic-lora-one-step-int4-report.json`, and
+  `/tmp/mmor-ic-lora-one-step-int2-report.json`
 
 ## Latest update
 
 - **Date:** 2026-09-11 (Asia/Karachi)
-- **Verified implementation commit:** `eff19cb`
-- **Remote verification:** `IRTAZAPC` passed all 28 tests and produced validated
-  97-frame LTX, VDA, SAM2, and ellipse-conditioning artifacts.
+- **Verified implementation commit:** `54fcb11` (one-step runner packaging pending)
+- **Remote verification:** `IRTAZAPC` passed all 32 tests, produced validated 97-frame
+  preprocessing artifacts, and completed one quantized IC-LoRA optimizer step.
