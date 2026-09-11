@@ -129,3 +129,9 @@ PSNR values were `[32.94, 31.94, 28.82, 30.41, 29.88]` dB and SSIM values were
 room geometry, equipment, and person positions at all five anchors; mild VAE softness
 and color shift remain. This passes the interpolation smoke gate but does not identify
 the undisclosed author clip, prompt, seed, or checkpoint precision.
+
+The pinned Video Depth Anything checkout is run in the shared preprocessing runtime
+(Torch 2.6/CUDA 12.4, xFormers 0.0.29.post3) rather than its older Torch 2.1.1
+requirements pin. Matplotlib 3.11 removed `cm.get_cmap`; the tracked compatibility
+patch uses the equivalent `cm.inferno` object and avoids constructing a colormap for
+grayscale output. This affects visualization saving only, not predicted depths.

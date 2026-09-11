@@ -1,0 +1,13 @@
+diff --git a/utils/dc_utils.py b/utils/dc_utils.py
+index 82ac3bb..4d651d2 100644
+--- a/utils/dc_utils.py
++++ b/utils/dc_utils.py
+@@ -72,7 +72,7 @@ def save_video(frames, output_video_path, fps=10, is_depths=False, grayscale=Fal
+ def save_video(frames, output_video_path, fps=10, is_depths=False, grayscale=False):
+     writer = imageio.get_writer(output_video_path, fps=fps, macro_block_size=1, codec='libx264', ffmpeg_params=['-crf', '18'])
+     if is_depths:
+-        colormap = np.array(cm.get_cmap("inferno").colors)
++        colormap = None if grayscale else np.array(cm.inferno.colors)
+         d_min, d_max = frames.min(), frames.max()
+         for i in range(frames.shape[0]):
+             depth = frames[i]
