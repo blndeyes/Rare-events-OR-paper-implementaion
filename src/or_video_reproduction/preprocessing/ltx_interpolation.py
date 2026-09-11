@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 from typing import Sequence
@@ -152,7 +153,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.plan_output.write_text(rendered, encoding="utf-8")
     if args.execute:
         args.output_dir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(command, cwd=args.ltx_root, check=True)
+        environment = os.environ.copy()
+        environment.setdefault(
+            "PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True"
+        )
+        subprocess.run(command, cwd=args.ltx_root, check=True, env=environment)
     return 0
 
 

@@ -77,6 +77,10 @@ Apply `patches/ltx-video-0.9.7-latent-normalization-device.patch` as the final h
 patch. After first-pass offload, the multi-scale upsampler otherwise combines CUDA
 latents with VAE normalization buffers on CPU. The patch copies only those small
 statistics to the latent device and does not alter their values.
+The launcher sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` unless the caller
+already chose an allocator configuration. The component patch also offloads the
+spatial upsampler immediately after use. Together these reclaim the approximately
+1.3 GiB needed by the full-resolution second-pass feed-forward activation.
 For FP8 multi-keyframe interpolation, also apply
 `patches/ltx-video-0.9.7-disable-multikeyframe-prompt-enhancement.patch`. The upstream
 pipeline reports that enhancement is unsupported with multiple conditioning items and
