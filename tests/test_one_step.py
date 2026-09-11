@@ -61,6 +61,30 @@ profiles:
         self.assertFalse(integration.paper_faithful)
         self.assertEqual(integration.quantization, "int2-quanto")
 
+    def test_faithful_profile_maps_no_change_to_official_null(self) -> None:
+        official = {
+            "optimization": {"steps": 2000},
+            "acceleration": {"quantization": "int2-quanto", "mixed_precision_mode": "bf16"},
+            "data": {"preprocessed_data_root": "/old", "num_dataloader_workers": 2},
+            "validation": {"interval": 250, "video_dims": [512, 512, 81]},
+            "checkpoints": {"interval": 250},
+            "wandb": {"enabled": True},
+            "lora": {"rank": 128},
+            "output_dir": "/old-output",
+        }
+        paper = {"experiment": {"target_resolution": [1024, 768], "frames": 97}}
+
+        result = build_one_step_config(
+            official,
+            paper,
+            precomputed_root="/data",
+            output_dir="/output",
+            quantization="no_change",
+            mixed_precision="bf16",
+        )
+
+        self.assertIsNone(result["acceleration"]["quantization"])
+
     def test_rejects_quantized_profile_marked_faithful(self) -> None:
         source = """\
 schema_version: 1

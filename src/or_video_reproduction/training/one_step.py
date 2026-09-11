@@ -25,7 +25,12 @@ def build_one_step_config(
     """Apply only integration-gate overrides to an official trainer configuration."""
 
     official["optimization"]["steps"] = 1
-    official["acceleration"]["quantization"] = quantization
+    # ``no_change`` is the reproduction profile's explicit sentinel for the
+    # official unquantized path. The pinned trainer represents that path as
+    # YAML/Python null rather than as a QuantizationOptions enum value.
+    official["acceleration"]["quantization"] = (
+        None if quantization == "no_change" else quantization
+    )
     official["acceleration"]["mixed_precision_mode"] = mixed_precision
     official["data"]["preprocessed_data_root"] = str(precomputed_root)
     official["data"]["num_dataloader_workers"] = 0
