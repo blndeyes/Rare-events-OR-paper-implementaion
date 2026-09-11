@@ -7,7 +7,7 @@ index 243f4a3..d90ab3a 100644
              batch_size = prompt_embeds.shape[0]
  
 -        device = self._execution_device
-+        device = kwargs.pop("device", self._execution_device)
++        device = torch.device(kwargs.pop("device", self._execution_device))
  
          self.video_scale_factor = self.video_scale_factor if is_video else 1
          vae_per_channel_normalize = kwargs.get("vae_per_channel_normalize", True)
