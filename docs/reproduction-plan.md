@@ -38,10 +38,11 @@ evaluation data.
 ## Compute arrangement
 
 - Source code: local Git repository, synchronized through the configured GitHub remote.
-- Training host: `irtaza@IRTAZAPC`.
-- GPU: RTX 4090, 24,564 MiB.
-- Host memory: 125 GiB; dataset filesystem has approximately 1.3 TiB free.
-- Remote data: approximately 489 GiB MMOR and 153 GiB 4DOR.
+- Primary training host: `irtaza@irtazastone`.
+- Primary GPU: RTX 6000 Ada, approximately 48 GiB.
+- Primary data roots: `/scratch/irtaza/MM-OR_processed` and
+  `/scratch/irtaza/4D-OR_full`.
+- The prior `IRTAZAPC` RTX 4090 remains the audited preprocessing/reference host.
 
 The remote MMOR extraction contains 22 top-level procedure directories and five
 camera streams with approximately 63,535 frames per camera. These are contiguous

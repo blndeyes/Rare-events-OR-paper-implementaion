@@ -136,6 +136,45 @@ neighboring annotations. These are diagnostic values rather than hard pass/fail
 thresholds because the paper does not specify temporal smoothing and 1-fps motion
 can legitimately be large.
 
+## Build and validate preprocessing batches
+
+Preview a deterministic candidate pool without writing or accepting a split:
+
+```bash
+PYTHONPATH=src python -m or_video_reproduction.data.selection \
+  --root /scratch/irtaza/MM-OR_processed \
+  --takes all --cameras 1 --stride-seconds 5 --seed 42 \
+  --output-dir /scratch/irtaza/or-repro-artifacts/mmor-split
+```
+
+The audited extraction reports 4,608 eligible windows. The paper does not disclose
+camera choice, take inclusion, stride, or seed. Only add
+`--accept-undisclosed-selection-hypothesis` after reviewing those choices; that flag
+writes 338 training and 50 ablation manifests clearly labeled as a reproduction
+hypothesis.
+
+After the persistent LTX batch has completed a small accepted subset, run all remaining
+geometry stages in one reusable process:
+
+```bash
+PREPROCESS_PYTHON=/path/to/environment/with-vda-and-sam2/bin/python
+PYTHONPATH=src "$PREPROCESS_PYTHON" \
+  -m or_video_reproduction.preprocessing.geometry_batch \
+  --batch-manifest /scratch/irtaza/or-repro-artifacts/mmor-split/batch.json \
+  --ltx-output-root /scratch/irtaza/or-repro-artifacts/ltx-batch \
+  --dataset-root /scratch/irtaza/MM-OR_processed \
+  --output-root /scratch/irtaza/or-repro-artifacts/geometry-batch \
+  --vda-root /scratch/irtaza/upstreams/Video-Depth-Anything \
+  --vda-checkpoint /scratch/irtaza/upstreams/Video-Depth-Anything/checkpoints/video_depth_anything_vitl.pth \
+  --sam2-root /scratch/irtaza/upstreams/sam2 \
+  --sam2-checkpoint /scratch/irtaza/upstreams/sam2/checkpoints/sam2.1_hiera_large.pt \
+  --max-clips 1 --fail-fast
+```
+
+The first run must report one completion. Running the identical command again must
+report one valid skip without loading VDA or SAM2. Each failure is retained in that
+clip's `status.json`; validated trainer inputs are listed in `pair-manifest.json`.
+
 ## Run after model integration: cheap GPU checks
 
 In order: one-batch forward/backward, inference from one real conditioning clip,

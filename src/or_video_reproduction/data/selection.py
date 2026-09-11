@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .clips import build_mmor_clip, write_manifest
+from .inventory import MMOR_LOGICAL_TAKES
 
 
 def enumerate_eligible_clips(
@@ -150,6 +151,14 @@ def _csv_strings(value: str) -> list[str]:
     return result
 
 
+def resolve_take_names(values: Sequence[str]) -> list[str]:
+    if list(values) == ["all"]:
+        return list(MMOR_LOGICAL_TAKES)
+    if "all" in values:
+        raise ValueError("Use --takes all by itself")
+    return list(values)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path)
@@ -171,9 +180,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     cameras = [int(value) for value in args.cameras]
+    takes = resolve_take_names(args.takes)
     eligible, rejected = enumerate_eligible_clips(
         args.root,
-        takes=args.takes,
+        takes=takes,
         cameras=cameras,
         stride_seconds=args.stride_seconds,
     )
@@ -196,7 +206,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             train,
             ablation,
             dataset_root=args.root,
-            takes=args.takes,
+            takes=takes,
             cameras=cameras,
             stride_seconds=args.stride_seconds,
             seed=args.seed,

@@ -6,6 +6,7 @@ import unittest
 from or_video_reproduction.data.selection import (
     deterministic_split,
     enumerate_eligible_clips,
+    resolve_take_names,
     write_hypothesis_split,
 )
 
@@ -81,6 +82,11 @@ class SelectionTests(unittest.TestCase):
     def test_rejects_insufficient_pool(self) -> None:
         with self.assertRaisesRegex(ValueError, "Need 388 eligible clips"):
             deterministic_split([], train_count=338, ablation_count=50, seed=42)
+
+    def test_all_take_alias_is_explicit_and_not_mixable(self) -> None:
+        self.assertGreater(len(resolve_take_names(["all"])), 30)
+        with self.assertRaisesRegex(ValueError, "by itself"):
+            resolve_take_names(["all", "001_PKA"])
 
 
 if __name__ == "__main__":

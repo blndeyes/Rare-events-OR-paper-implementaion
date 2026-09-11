@@ -183,3 +183,26 @@ forward pass, backward pass, AdamW update, and saved rank-128 LoRA weights. That
 took 25.94 seconds after model initialization and peaked at 21.392 GiB allocated and
 23.043 GiB reserved. This proves the complete integration path, but INT2 remains a
 severe reproduction deviation and is not accepted as the faithful training precision.
+
+## Clip-selection and resumable-batch audit, 11 September 2026
+
+The earlier action-run count is not a usable 338-video reconstruction. Consecutive
+next-action labels produce 112 runs of at least five seconds and therefore 336
+camera/run combinations before media validation. Requiring five real Azure RGB frames
+and an available first-frame ground-truth mask leaves only 216 combinations. The
+336-count coincidence is rejected rather than padded with two invented clips.
+
+For comparison, enumerating camera 1 across Azure-capable logical takes at a five-second
+stride yields 4,608 valid five-keyframe windows. This is a sufficient candidate pool
+for a deterministic 338/50 video-wise split, but the camera choice, take inclusion,
+stride, and seed are not disclosed by the paper. The split builder therefore labels
+its output as a reproduction hypothesis and requires an explicit acknowledgement flag
+before writing manifests.
+
+The persistent preprocessing path is now verified on one real sample. A reusable
+Video Depth Anything ViT-L model emits finite float32 depth with shape
+`(97, 768, 1024)`; its inference phase took about nine seconds in a standalone smoke
+run. A reusable SAM2.1 Hiera Large predictor emits aligned uint8 labels at about
+18 frames per second. The combined batch then renders the ellipse-only MP4, validates
+both videos and arrays, records per-stage status, and skips the valid sample on rerun
+without loading either model.

@@ -3,14 +3,13 @@
 ## Status
 
 - **Overall:** `in_progress`
-- **Current phase:** training-hardware decision and frozen clip-manifest construction
-- **Latest verified accomplishment:** one real target/ellipse pair passes official
-  latent preprocessing and a complete IC-LoRA optimizer step, including checkpoint
-  saving, with the documented INT2-Quanto integration fallback.
-- **Current blockers:** faithful BF16 training does not fit the 24 GiB RTX 4090, and the
-  authors' exact 338 training clips, camera choices, and event boundaries are undisclosed.
-- **Next action:** select larger/multi-GPU or offloaded hardware for faithful BF16, and
-  freeze a clearly labeled reproduction policy for the 338 training clips.
+- **Current phase:** BF16 tiny-overfit validation and clip-policy construction
+- **Latest verified accomplishment:** the resumable VDA/SAM2/ellipse batch completed a
+  real 97-frame sample, passed strict pair validation, and skipped all work on rerun.
+- **Current blockers:** the tiny-overfit checkpoint's generated response is not yet
+  verified, and the authors' exact 338/50 clip identities remain undisclosed.
+- **Next action:** finish tiny-overfit inference on irtazastone, and review an
+  explicitly hypothetical clip-selection policy before freezing any 338/50 split.
 
 ## Area status
 
@@ -18,13 +17,15 @@
 | --- | --- | --- | --- |
 | Source and dataset audit | `passed` | `docs/source-audit.md`; `docs/dataset-audit.md` | Recheck only if sources or datasets change |
 | Paper-shaped smoke clip | `passed` | `/tmp/mmor-smoke-clip.json` on `IRTAZAPC`; `tests/test_clips.py` | Retain as preprocessing gate |
-| Exact 338/50 clip construction | `blocked` | Public metadata rules yield 336 or 277, not 338 | Obtain supervisor guidance or freeze a labeled reproduction policy |
-| Frozen train/evaluation manifests | `not_started` | `configs/paper_table1.yaml` still has `split_manifest: null` | Create after clip policy is settled |
+| Exact 338/50 clip construction | `blocked` | Action-run theory yields 336 before file checks but only 216 usable clips; paper omits selection | Obtain author guidance or approve a labeled hypothesis |
+| Candidate train/ablation manifests | `passed` | Deterministic selector finds 4,608 eligible one-camera, five-second-stride windows | Review cameras/takes/stride/seed before explicit acknowledgement |
+| Frozen train/evaluation manifests | `not_started` | `configs/paper_table1.yaml` still has `split_manifest: null` | Freeze only after the hypothesis is accepted |
 | Ellipse and semantic rendering | `passed` | 97-frame 1024x768 black-canvas conditioning MP4 and contact sheet | Preserve exact representation in training loader |
 | LTX temporal interpolation | `passed` | 97 frames at 24 fps and 1024x768; anchor PSNR 28.82--32.94 dB and SSIM 0.9038--0.9517 | Use persistent resumable batch runner after manifests freeze |
-| SAM2 propagation | `passed` | 97 masks at about 18 fps; anchor entity IoU 0.868--1.000 | Integrate into resumable batch runner |
-| Video Depth Anything | `passed` | ViT-L float32 `(97, 768, 1024)` output; finite values and valid 97-frame visualization | Feed result to sequence geometry renderer |
-| IC-LoRA training | `hardware_blocked` | Official pair preprocessing passes; INT2 completes one optimizer step, while INT8/INT4 OOM | Move faithful BF16 run to larger/multi-GPU or validated offload |
+| SAM2 propagation | `passed` | Reusable SAM2.1 Hiera Large runner produces 97 masks at about 18 fps | Run through resumable geometry batch |
+| Video Depth Anything | `passed` | Reusable ViT-L runner produces finite float32 `(97, 768, 1024)` depth | Run through resumable geometry batch |
+| Full geometry batch | `passed` | Real sample completed and strict rerun returned `skipped_valid_existing` | Execute on accepted clip manifest |
+| IC-LoRA training | `in_progress` | User-provided stone log loads BF16 LoRA checkpoint step 80; inference traceback is incomplete | Complete tiny-overfit response test |
 | PatchGAN | `blocked` | Paper omits architecture, inputs, loss, weight, and schedule | Seek supervisor guidance; keep optional and isolated |
 | Table 1 evaluation | `not_started` | Exact test clips and metric implementations are unresolved | Freeze manifests and metric contract before evaluation |
 | Experiment registry | `not_started` | No registry file or run records in the repository | Add schema before the first model execution |
@@ -43,23 +44,29 @@
   SAM2, Video Depth Anything, MMOR, and 4DOR.
 - A persistent resumable LTX batch runner now loads the interpolation pipeline once
   instead of repeating model initialization for every clip.
+- Reusable VDA and SAM2 adapters plus a resumable geometry batch now avoid model
+  initialization for each of hundreds of clips.
+- Strict target/conditioning validation checks both videos, label/depth arrays,
+  ellipse-only metadata, palette membership, and predicate exclusion.
+- A deterministic split builder can construct 338/50 manifests, but writes them only
+  after explicit acknowledgement that the undisclosed selection is a hypothesis.
 - Official IC-LoRA preprocessing and a real one-step integration gate are complete.
-- All 35 repository tests passed on `IRTAZAPC` on 2026-09-11 at implementation commit
-  `60072a6`, including the guarded BF16/fallback profile switch.
+- All 48 repository tests passed on `IRTAZAPC` on 2026-09-11 at implementation commit
+  `3ecdad9`.
 
 ## Work in progress
 
-- Package the verified one-step hardware gate and keep its quantized modes explicitly
-  separated from the faithful BF16 experiment.
+- Finish the BF16 tiny-overfit inference/conditioning-response gate on irtazastone.
+- Review the candidate pool policy; do not equate a deterministic local selection with
+  the authors' unavailable manifest.
 - Keep the smoke clip separate from any future frozen training or evaluation split.
 
 ## Next three prioritized actions
 
-1. Choose faithful-training hardware: at least a larger GPU, multiple GPUs, or a
-   separately validated offload strategy.
-2. Freeze a labeled 338-clip reproduction manifest after resolving the undisclosed
-   clip-selection policy.
-3. Run a tiny-subset overfit before any 8,000-step experiment.
+1. Complete inference from the BF16 step-80 tiny-overfit checkpoint and verify response
+   to changed ellipse trajectories.
+2. Approve or revise the explicit takes/cameras/stride/seed selection hypothesis.
+3. Run the resumable LTX and geometry batches on a small selected subset before scaling.
 
 ## Blockers and questions requiring supervisor input
 
@@ -87,10 +94,12 @@ or inferred details remain classified in `docs/ambiguities.md`.
 ## Experiments and results
 
 The complete preprocessing chain has run successfully on one smoke clip: LTX
-interpolation, Video Depth Anything, SAM2, ellipse-only sequence rendering, and
-official target/reference latent encoding. A single INT2-Quanto IC-LoRA optimizer
-step produced a checkpoint; INT8 and INT4 both reached model execution but exhausted
-24 GiB VRAM. No faithful BF16 training checkpoint or Table 1 metric has been produced.
+interpolation, reusable Video Depth Anything, reusable SAM2, ellipse-only sequence
+rendering, strict pair validation, and official target/reference latent encoding.
+The prior RTX 4090 required INT2 for an optimizer-step integration test. A user-provided
+irtazastone log shows an unquantized BF16 tiny-overfit checkpoint at step 80 loading
+successfully; generation still exits with an incomplete traceback, so the behavioral
+overfit gate has not passed. No Table 1 metric has been produced.
 
 ## Reproduction risks
 
@@ -122,10 +131,12 @@ step produced a checkpoint; INT8 and INT4 both reached model execution but exhau
 - Remote one-step reports: `/tmp/mmor-ic-lora-one-step-report.json`,
   `/tmp/mmor-ic-lora-one-step-int4-report.json`, and
   `/tmp/mmor-ic-lora-one-step-int2-report.json`
+- Remote strict pair report: `/tmp/mmor-smoke-pair-validation.json`
+- Remote resumable geometry smoke: `/tmp/mmor-geometry-batch-smoke`
 
 ## Latest update
 
 - **Date:** 2026-09-11 (Asia/Karachi)
-- **Verified implementation commit:** `60072a6`
-- **Remote verification:** `IRTAZAPC` passed all 35 tests, produced validated 97-frame
-  preprocessing artifacts, and completed one quantized IC-LoRA optimizer step.
+- **Verified implementation commit:** `3ecdad9`
+- **Remote verification:** `IRTAZAPC` passed all 48 tests; the real geometry batch
+  completed once and skipped valid outputs on rerun.
