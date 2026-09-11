@@ -80,19 +80,12 @@ index 243f4a3..d90ab3a 100644
  
          else:
              image = latents
-@@ -1820,9 +1832,15 @@ class LTXMultiScalePipeline:
-         result = self.video_pipeline(*args, **kwargs)
-         latents = result.images
- 
+@@ -1823,1 +1835,2 @@ class LTXMultiScalePipeline:
 +        self.latent_upsampler.to(latents.device)
          upsampled_latents = self._upsample_latents(self.latent_upsampler, latents)
-         upsampled_latents = adain_filter_latent(
-             latents=upsampled_latents, reference_latents=latents
+@@ -1826,1 +1839,5 @@ class LTXMultiScalePipeline:
          )
 +        if kwargs.get("offload_to_cpu"):
 +            self.latent_upsampler.cpu()
 +            if latents.device.type == "cuda":
 +                torch.cuda.empty_cache()
- 
-         kwargs = original_kwargs
- 
