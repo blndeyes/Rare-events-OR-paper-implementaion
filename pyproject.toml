@@ -28,6 +28,7 @@ or-geometry-sequence-preview = "or_video_reproduction.geometry.sequence_preview:
 or-build-mmor-clip = "or_video_reproduction.data.clips:main"
 or-plan-ltx-interpolation = "or_video_reproduction.preprocessing.ltx_interpolation:main"
 or-propagate-sam2 = "or_video_reproduction.preprocessing.sam2_propagation:main"
+or-render-geometry-sequence = "or_video_reproduction.geometry.render_sequence:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
