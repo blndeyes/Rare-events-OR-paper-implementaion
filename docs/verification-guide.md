@@ -65,8 +65,11 @@ hardware accommodation, not a paper-disclosed precision choice; it leaves the mo
 version, five-keyframe contract, resolution, frame count, and frame rate unchanged.
 The pinned legacy launcher also moves every component to CUDA before its own offload
 logic can run. Apply `patches/ltx-video-0.9.7-sequential-offload.patch` to the clean,
-pinned LTX checkout. The patch activates the pipeline's already-declared sequential
-offload order only when `--offload_to_cpu` is set; non-offloaded behavior is unchanged.
+pinned LTX checkout, followed by
+`patches/ltx-video-0.9.7-explicit-component-offload.patch`. The patches retain the
+launcher's intended explicit sequence—text encoder, conditioning VAE, transformer,
+decoding VAE—while ensuring each component is moved to CUDA only for its own phase.
+Non-offloaded behavior is unchanged.
 For FP8 multi-keyframe interpolation, also apply
 `patches/ltx-video-0.9.7-disable-multikeyframe-prompt-enhancement.patch`. The upstream
 pipeline reports that enhancement is unsupported with multiple conditioning items and

@@ -92,8 +92,9 @@ The official 4D-OR source currently uses take split train `[1,3,5,7,9,10]`, vali
   the target paper does not disclose its interpolation checkpoint precision.
 - The legacy inference factory transfers the transformer, VAE, and text encoder to
   CUDA before its runtime `offload_to_cpu` path. The tracked sequential-offload patch
-  activates the pipeline's declared Diffusers offload sequence during construction;
-  it is a host-compatibility patch against the pinned source, not an author-code claim.
+  keeps construction on CPU, while the explicit-component patch transfers only the
+  text encoder, conditioning VAE, transformer, or decoding VAE during its own phase.
+  These are host-compatibility patches against pinned source, not author-code claims.
 - Multi-keyframe inference explicitly rejects prompt enhancement and returns the
   original prompt, yet the 0.9.7 config loads and retains both enhancer models. The
   tracked FP8 config patch disables this ineffective path, preserving the prompt while

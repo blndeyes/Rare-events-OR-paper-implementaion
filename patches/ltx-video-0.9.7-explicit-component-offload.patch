@@ -1,0 +1,82 @@
+diff --git a/ltx_video/pipelines/pipeline_ltx_video.py b/ltx_video/pipelines/pipeline_ltx_video.py
+index 243f4a3..d90ab3a 100644
+--- a/ltx_video/pipelines/pipeline_ltx_video.py
++++ b/ltx_video/pipelines/pipeline_ltx_video.py
+@@ -902,7 +902,7 @@ class LTXVideoPipeline(DiffusionPipeline):
+         else:
+             batch_size = prompt_embeds.shape[0]
+ 
+-        device = self._execution_device
++        device = kwargs.pop("device", self._execution_device)
+ 
+         self.video_scale_factor = self.video_scale_factor if is_video else 1
+         vae_per_channel_normalize = kwargs.get("vae_per_channel_normalize", True)
+@@ -1016,7 +1016,7 @@ class LTXVideoPipeline(DiffusionPipeline):
+ 
+         # 3. Encode input prompt
+         if self.text_encoder is not None:
+-            self.text_encoder = self.text_encoder.to(self._execution_device)
++            self.text_encoder = self.text_encoder.to(device)
+ 
+         (
+             prompt_embeds,
+@@ -1038,8 +1038,8 @@ class LTXVideoPipeline(DiffusionPipeline):
+ 
+         if offload_to_cpu and self.text_encoder is not None:
+             self.text_encoder = self.text_encoder.cpu()
+-
+-        self.transformer = self.transformer.to(self._execution_device)
++            if str(device).startswith("cuda"):
++                torch.cuda.empty_cache()
+ 
+         prompt_embeds_batch = prompt_embeds
+         prompt_attention_mask_batch = prompt_attention_mask
+@@ -1068,6 +1068,7 @@ class LTXVideoPipeline(DiffusionPipeline):
+         # 4. Prepare the initial latents using the provided media and conditioning items
+ 
+         # Prepare the initial latents tensor, shape = (b, c, f, h, w)
++        self.vae = self.vae.to(device)
+         latents = self.prepare_latents(
+             latents=latents,
+             media_items=media_items,
+@@ -1091,6 +1092,12 @@ class LTXVideoPipeline(DiffusionPipeline):
+                 generator=generator,
+             )
+         )
++        if offload_to_cpu:
++            self.vae = self.vae.cpu()
++            if str(device).startswith("cuda"):
++                torch.cuda.empty_cache()
++
++        self.transformer = self.transformer.to(device)
+         init_latents = latents.clone()  # Used for image_cond_noise_update
+ 
+         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
+@@ -1288,7 +1295,7 @@ class LTXVideoPipeline(DiffusionPipeline):
+ 
+         if offload_to_cpu:
+             self.transformer = self.transformer.cpu()
+-            if self._execution_device == "cuda":
++            if str(device).startswith("cuda"):
+                 torch.cuda.empty_cache()
+ 
+         # Remove the added conditioning latents
+@@ -1302,6 +1309,7 @@ class LTXVideoPipeline(DiffusionPipeline):
+             // math.prod(self.patchifier.patch_size),
+         )
+         if output_type != "latent":
++            self.vae = self.vae.to(device)
+             if self.vae.decoder.timestep_conditioning:
+                 noise = torch.randn_like(latents)
+                 if not isinstance(decode_timestep, list):
+@@ -1329,6 +1337,10 @@ class LTXVideoPipeline(DiffusionPipeline):
+             )
+ 
+             image = self.image_processor.postprocess(image, output_type=output_type)
++            if offload_to_cpu:
++                self.vae = self.vae.cpu()
++                if str(device).startswith("cuda"):
++                    torch.cuda.empty_cache()
+ 
+         else:
+             image = latents

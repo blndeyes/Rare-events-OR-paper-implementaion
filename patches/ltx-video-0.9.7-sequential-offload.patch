@@ -24,14 +24,12 @@ index 1eddc8e..6c7a4da 100644
  
      if enhance_prompt:
          prompt_enhancer_image_caption_model = AutoModelForCausalLM.from_pretrained(
-@@ -267,7 +269,10 @@ def create_ltx_video_pipeline(
+@@ -267,7 +269,8 @@ def create_ltx_video_pipeline(
      }
  
      pipeline = LTXVideoPipeline(**submodel_dict)
 -    pipeline = pipeline.to(device)
-+    if offload_to_cpu:
-+        pipeline.enable_model_cpu_offload(device=device)
-+    else:
++    if not offload_to_cpu:
 +        pipeline = pipeline.to(device)
      return pipeline
  
