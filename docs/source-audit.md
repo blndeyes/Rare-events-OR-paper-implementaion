@@ -114,3 +114,18 @@ The first MMOR filename inventory found 22 top-level procedure directories and f
 camera streams totaling approximately 63,535 contiguous frames per camera. Panoptic
 annotations are present for cameras 1, 4, and 5. The extracted dataset is source data;
 the paper's 338 videos of 97 frames each have not yet been reconstructed.
+
+## LTX interpolation smoke result, 11 September 2026
+
+The five consecutive camera-1 frames `000329` through `000333` from `001_PKA` were
+conditioned at output indices 0, 24, 48, 72, and 96. The patched official 0.9.7-dev
+FP8 pipeline completed on the RTX 4090. Its first multi-scale pass took 78 seconds
+(27 executed steps), and its second pass took 182 seconds (13 executed steps).
+
+The H.264 artifact decodes as exactly 97 frames at 24 fps and 1024x768, with duration
+4.042 seconds. Against raw source frames resized to the output aspect ratio, anchor
+PSNR values were `[32.94, 31.94, 28.82, 30.41, 29.88]` dB and SSIM values were
+`[0.9517, 0.9417, 0.9038, 0.9226, 0.9197]`. Visual inspection confirms matching
+room geometry, equipment, and person positions at all five anchors; mild VAE softness
+and color shift remain. This passes the interpolation smoke gate but does not identify
+the undisclosed author clip, prompt, seed, or checkpoint precision.

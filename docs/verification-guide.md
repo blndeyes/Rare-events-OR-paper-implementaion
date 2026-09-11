@@ -81,6 +81,12 @@ The launcher sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` unless the 
 already chose an allocator configuration. The component patch also offloads the
 spatial upsampler immediately after use. Together these reclaim the approximately
 1.3 GiB needed by the full-resolution second-pass feed-forward activation.
+
+The `001_PKA` camera-1 smoke clip now passes this gate: 97 decoded frames, 24 fps,
+1024x768, five visibly aligned conditioning anchors, anchor PSNR 28.82--32.94 dB,
+and anchor SSIM 0.9038--0.9517. Do not run 338 separate launcher processes; the
+production preprocessing runner must keep the loaded pipeline alive across clips,
+resume from validated outputs, and record per-clip failures and timings.
 For FP8 multi-keyframe interpolation, also apply
 `patches/ltx-video-0.9.7-disable-multikeyframe-prompt-enhancement.patch`. The upstream
 pipeline reports that enhancement is unsupported with multiple conditioning items and
