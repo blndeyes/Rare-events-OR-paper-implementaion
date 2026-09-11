@@ -1,0 +1,81 @@
+diff --git a/ltx_video/inference.py b/ltx_video/inference.py
+index a7b77a7..55dc909 100644
+--- a/ltx_video/inference.py
++++ b/ltx_video/inference.py
+@@ -369,7 +369,7 @@ class InferenceConfig:
+     )
+ 
+ 
+-def infer(config: InferenceConfig):
++def infer(config: InferenceConfig, pipeline=None):
+     pipeline_config = load_pipeline_config(config.pipeline_config)
+ 
+     ltxv_model_name_or_path = pipeline_config["checkpoint_path"]
+@@ -480,27 +480,30 @@ def infer(config: InferenceConfig):
+         "prompt_enhancer_llm_model_name_or_path"
+     ]
+ 
+-    pipeline = create_ltx_video_pipeline(
+-        ckpt_path=ltxv_model_path,
+-        precision=precision,
+-        text_encoder_model_name_or_path=text_encoder_model_name_or_path,
+-        sampler=sampler,
+-        device=device,
+-        enhance_prompt=enhance_prompt,
+-        prompt_enhancer_image_caption_model_name_or_path=prompt_enhancer_image_caption_model_name_or_path,
+-        prompt_enhancer_llm_model_name_or_path=prompt_enhancer_llm_model_name_or_path,
+-        offload_to_cpu=offload_to_cpu,
+-    )
++    if pipeline is None:
++        pipeline = create_ltx_video_pipeline(
++            ckpt_path=ltxv_model_path,
++            precision=precision,
++            text_encoder_model_name_or_path=text_encoder_model_name_or_path,
++            sampler=sampler,
++            device=device,
++            enhance_prompt=enhance_prompt,
++            prompt_enhancer_image_caption_model_name_or_path=prompt_enhancer_image_caption_model_name_or_path,
++            prompt_enhancer_llm_model_name_or_path=prompt_enhancer_llm_model_name_or_path,
++            offload_to_cpu=offload_to_cpu,
++        )
+ 
+-    if pipeline_config.get("pipeline_type", None) == "multi-scale":
+-        if not spatial_upscaler_model_path:
+-            raise ValueError(
+-                "spatial upscaler model path is missing from pipeline config file and is required for multi-scale rendering"
++        if pipeline_config.get("pipeline_type", None) == "multi-scale":
++            if not spatial_upscaler_model_path:
++                raise ValueError(
++                    "spatial upscaler model path is missing from pipeline config file and is required for multi-scale rendering"
++                )
++            latent_upsampler = create_latent_upsampler(
++                spatial_upscaler_model_path, device
++            )
++            pipeline = LTXMultiScalePipeline(
++                pipeline, latent_upsampler=latent_upsampler
+             )
+-        latent_upsampler = create_latent_upsampler(
+-            spatial_upscaler_model_path, device
+-        )
+-        pipeline = LTXMultiScalePipeline(pipeline, latent_upsampler=latent_upsampler)
+ 
+     media_item = None
+     if config.input_media_path:
+@@ -582,6 +585,7 @@ def infer(config: InferenceConfig):
+         pad_right = images.shape[4]
+     images = images[:, :, : config.num_frames, pad_top:pad_bottom, pad_left:pad_right]
+ 
++    output_filenames = []
+     for i in range(images.shape[0]):
+         # Gathering from B, C, F, H, W to C, F, H, W and then permuting to F, H, W, C
+         video_np = images[i].permute(1, 2, 3, 0).cpu().float().numpy()
+@@ -616,6 +620,9 @@ def infer(config: InferenceConfig):
+                     video.append_data(frame)
+ 
+         logger.warning(f"Output saved to {output_filename}")
++        output_filenames.append(output_filename)
++
++    return pipeline, output_filenames
+ 
+ 
+ def prepare_conditioning(

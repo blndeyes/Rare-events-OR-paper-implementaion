@@ -4,12 +4,13 @@
 
 - **Overall:** `in_progress`
 - **Current phase:** MMOR clip reconstruction and 97-frame preprocessing smoke test
-- **Latest verified accomplishment:** official pinned LTX 0.9.7-dev interpolation and
-  Video Depth Anything ViT-L inference both pass on the same real 97-frame MMOR clip.
+- **Latest verified accomplishment:** the complete paper-ordered preprocessing chain
+  passes on one real clip: LTX interpolation, VDA depth, SAM2 propagation, and a
+  97-frame ellipse-only conditioning video.
 - **Current blocker:** the authors' exact 338 training clips, 50 ablation clips, camera
   choices, and event boundaries are undisclosed.
-- **Next action:** propagate the first MMOR ground-truth entity mask through the passed
-  interpolated clip with pinned SAM2.1 Hiera Large and visually inspect the labels.
+- **Next action:** build a persistent resumable batch runner before scaling preprocessing
+  toward 338 clips, then begin the IC-LoRA integration gate.
 
 ## Area status
 
@@ -19,9 +20,9 @@
 | Paper-shaped smoke clip | `passed` | `/tmp/mmor-smoke-clip.json` on `IRTAZAPC`; `tests/test_clips.py` | Retain as preprocessing gate |
 | Exact 338/50 clip construction | `blocked` | Public metadata rules yield 336 or 277, not 338 | Obtain supervisor guidance or freeze a labeled reproduction policy |
 | Frozen train/evaluation manifests | `not_started` | `configs/paper_table1.yaml` still has `split_manifest: null` | Create after clip policy is settled |
-| Ellipse and semantic rendering | `passed` | `docs/geometry-audit.md`; geometry tests and real-frame review | Revalidate on the final 97-frame representation |
+| Ellipse and semantic rendering | `passed` | 97-frame 1024x768 black-canvas conditioning MP4 and contact sheet | Preserve exact representation in training loader |
 | LTX temporal interpolation | `passed` | 97 frames at 24 fps and 1024x768; anchor PSNR 28.82--32.94 dB and SSIM 0.9038--0.9517 | Build persistent resumable batch runner |
-| SAM2 propagation | `in_progress` | Pinned adapter and unit tests implemented | Execute and inspect one 97-frame propagation |
+| SAM2 propagation | `passed` | 97 masks at about 18 fps; anchor entity IoU 0.868--1.000 | Integrate into resumable batch runner |
 | Video Depth Anything | `passed` | ViT-L float32 `(97, 768, 1024)` output; finite values and valid 97-frame visualization | Feed result to sequence geometry renderer |
 | IC-LoRA training | `not_started` | Trainer/checkpoint hypothesis pinned | Wait for preprocessing correctness gates |
 | PatchGAN | `blocked` | Paper omits architecture, inputs, loss, weight, and schedule | Seek supervisor guidance; keep optional and isolated |
@@ -40,19 +41,20 @@
   camera 1, timestamps 0-4 (Azure frames 000329-000333).
 - Official upstream snapshots are pinned for LTX-Video inference, LTX-Video Trainer,
   SAM2, Video Depth Anything, MMOR, and 4DOR.
-- All 22 repository tests passed on `IRTAZAPC` on 2026-09-10 at implementation commit
-  `74d98f1692de80f745cbceebcb4abfd8f6999277`.
+- All 28 repository tests passed on `IRTAZAPC` on 2026-09-11 at implementation commit
+  `eff19cb`.
 
 ## Work in progress
 
-- Validate first-frame entity-mask propagation with official pinned SAM2.1 Hiera Large.
+- Build a persistent preprocessing runner that loads heavyweight models once, validates
+  existing outputs, and resumes after per-clip failures.
 - Keep the smoke clip separate from any future frozen training or evaluation split.
 
 ## Next three prioritized actions
 
-1. Execute and visually inspect pinned SAM2 propagation on the 97-frame smoke clip.
-2. Render 97 frames of ellipse-only geometry from SAM2 labels and VDA relative depth.
-3. Build a persistent, resumable preprocessing runner before scaling toward 338 clips.
+1. Build a persistent, resumable preprocessing runner before scaling toward 338 clips.
+2. Add a versioned run registry with per-stage timings and validation outcomes.
+3. Begin the cheapest official IC-LoRA model-construction smoke gate without training.
 
 ## Blockers and questions requiring supervisor input
 
@@ -79,10 +81,11 @@ or inferred details remain classified in `docs/ambiguities.md`.
 
 ## Experiments and results
 
-Two preprocessing models have run successfully on the smoke clip: LTX interpolation
-and Video Depth Anything. No IC-LoRA training checkpoint or Table 1 metric has been
-produced. The experiment registry must distinguish execution success, correctness
-checks, qualitative quality, and quantitative reproduction success.
+The complete preprocessing chain has run successfully on one smoke clip: LTX
+interpolation, Video Depth Anything, SAM2, and ellipse-only sequence rendering. No
+IC-LoRA training checkpoint or Table 1 metric has been produced. The experiment
+registry must distinguish execution success, correctness checks, qualitative quality,
+and quantitative reproduction success.
 
 ## Reproduction risks
 
@@ -107,10 +110,12 @@ checks, qualitative quality, and quantitative reproduction success.
 - Remote smoke manifest: `/tmp/mmor-smoke-clip.json`
 - Remote interpolation output: `/tmp/mmor-ltx-interpolation-fp8`
 - Remote VDA output: `/tmp/mmor-vda-vitl`
+- Remote SAM2 output: `/tmp/mmor-sam2-vitl`
+- Remote ellipse conditioning: `/tmp/mmor-ellipse-conditioning`
 
 ## Latest update
 
 - **Date:** 2026-09-11 (Asia/Karachi)
-- **Verified implementation commit:** `4b94ad1` before the current SAM2 adapter
-- **Remote verification:** `IRTAZAPC` produced and validated the 97-frame LTX and VDA
-  artifacts. SAM2 execution is the active gate.
+- **Verified implementation commit:** `eff19cb`
+- **Remote verification:** `IRTAZAPC` passed all 28 tests and produced validated
+  97-frame LTX, VDA, SAM2, and ellipse-conditioning artifacts.

@@ -142,3 +142,20 @@ values, and ranges from 12.609 to 3146.822. Its visualization decodes as 97 fram
 24 fps and 1024x768. Visual inspection shows temporally stable room structure with
 people and nearby equipment separated from the background, so the VDA smoke gate
 passes. Absolute values are model-relative and must not be interpreted as metric depth.
+
+## SAM2 and ellipse-conditioning smoke result, 11 September 2026
+
+Official SAM2.1 Hiera Large propagated the resized first-frame ground-truth mask
+through all 97 interpolated frames at about 18 frames per second. The output is uint8
+with shape `(97, 768, 1024)` and contains background plus three paper entities:
+instrument table, MPS station, and tracker. Against the four later MMOR annotations at
+the LTX anchor frames, per-entity IoU ranges from 0.868 to 0.968; frame zero is preserved
+exactly and has IoU 1.0. The optional SAM2 CUDA connected-components extension was
+disabled, so official hole-filling post-processing is skipped as documented upstream.
+
+Combining those masks with VDA relative depth produces an H.264 conditioning video of
+exactly 97 frames, 24 fps, and 1024x768. Visual inspection confirms that every frame is
+a black canvas containing only three filled ellipses. Larger VDA output is treated as
+nearer: on frame zero, entity mean VDA predictions increase as the corresponding MMOR
+sensor distances generally decrease. This direction and per-frame min-max normalization
+remain explicitly recorded reproduction hypotheses because the paper omits both details.
