@@ -76,6 +76,11 @@ class VideoDepthRunner:
         if not checkpoint_path.is_file():
             raise FileNotFoundError(checkpoint_path)
 
+        # VDA uses a top-level package named ``utils``. Some environments preload an
+        # unrelated package with that generic name, so bind it to the pinned checkout.
+        for module_name in list(sys.modules):
+            if module_name == "utils" or module_name.startswith("utils."):
+                del sys.modules[module_name]
         sys.path.insert(0, str(vda_root))
         import torch
         from utils.dc_utils import read_video_frames
@@ -145,4 +150,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
