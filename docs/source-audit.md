@@ -95,6 +95,10 @@ The official 4D-OR source currently uses take split train `[1,3,5,7,9,10]`, vali
   keeps construction on CPU, while the explicit-component patch transfers only the
   text encoder, conditioning VAE, transformer, or decoding VAE during its own phase.
   These are host-compatibility patches against pinned source, not author-code claims.
+- The 0.9.7 FP8 config is not included in the inference code's mixed-precision test,
+  producing a BF16-input/FP8-weight mismatch at the first attention projection on the
+  RTX 4090. The tracked factory patch enables the pipeline's existing BF16 autocast
+  for the official FP8 precision value; a direct CUDA linear-layer probe passes.
 - Multi-keyframe inference explicitly rejects prompt enhancement and returns the
   original prompt, yet the 0.9.7 config loads and retains both enhancer models. The
   tracked FP8 config patch disables this ineffective path, preserving the prompt while

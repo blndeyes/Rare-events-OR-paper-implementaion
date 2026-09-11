@@ -69,7 +69,10 @@ pinned LTX checkout, followed by
 `patches/ltx-video-0.9.7-explicit-component-offload.patch`. The patches retain the
 launcher's intended explicit sequence—text encoder, conditioning VAE, transformer,
 decoding VAE—while ensuring each component is moved to CUDA only for its own phase.
-Non-offloaded behavior is unchanged.
+Non-offloaded behavior is unchanged. The factory patch also routes the official
+`float8_e4m3fn` precision through the pipeline's existing BF16 autocast block.
+Without it, the first attention projection receives BF16 activations and FP8 weights
+and fails before denoising step one.
 For FP8 multi-keyframe interpolation, also apply
 `patches/ltx-video-0.9.7-disable-multikeyframe-prompt-enhancement.patch`. The upstream
 pipeline reports that enhancement is unsupported with multiple conditioning items and
