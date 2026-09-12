@@ -97,7 +97,10 @@ still produce all 97 frames. Pair validation must report `36 passed, 0 failed`.
 ## 4. Precompute official trainer inputs
 
 The fixed caption is an undisclosed-choice hypothesis. The dataset builder refuses a
-train/held-out take overlap and emits only the thirty training pairs.
+train/held-out take overlap and emits only the thirty training pairs. It stages
+hardlinks beneath `trainer-data` because the pinned official preprocessor rejects
+media paths outside the directory containing `dataset.json`; hardlinks avoid copying
+the videos.
 
 ```bash
 TRAINER=/scratch/irtaza/upstreams/LTX-Video-Trainer
