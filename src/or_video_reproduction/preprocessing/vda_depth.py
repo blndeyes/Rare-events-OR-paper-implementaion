@@ -28,6 +28,14 @@ MODEL_CONFIGS = {
 }
 
 
+def _set_native_decord_bridge() -> None:
+    """Restore the array type expected by pinned VDA's ``dc_utils`` reader."""
+
+    import decord
+
+    decord.bridge.set_bridge("native")
+
+
 def _git_head(repository: Path) -> str:
     result = subprocess.run(
         ["git", "-C", str(repository), "rev-parse", "HEAD"],
@@ -102,6 +110,9 @@ class VideoDepthRunner:
     def run(self, video_path: Path, output_path: Path) -> dict[str, object]:
         if not video_path.is_file():
             raise FileNotFoundError(video_path)
+        # Decord's bridge is process-global.  Trainer/SAM2 imports may switch it
+        # to torch, whereas pinned VDA calls ``get_batch(...).asnumpy()``.
+        _set_native_decord_bridge()
         frames, source_fps = self.read_video_frames(str(video_path), -1, -1, 1280)
         depths, output_fps = self.model.infer_video_depth(
             frames,

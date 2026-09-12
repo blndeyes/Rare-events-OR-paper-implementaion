@@ -1,5 +1,7 @@
+import sys
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -8,6 +10,12 @@ from or_video_reproduction.preprocessing.vda_depth import validate_depth_output
 
 
 class VideoDepthTests(unittest.TestCase):
+    def test_restores_native_decord_bridge_for_pinned_reader(self) -> None:
+        bridge = SimpleNamespace(set_bridge=Mock())
+        with patch.dict(sys.modules, {"decord": SimpleNamespace(bridge=bridge)}):
+            vda_depth._set_native_decord_bridge()
+        bridge.set_bridge.assert_called_once_with("native")
+
     def test_validates_paper_shape_and_finite_values(self) -> None:
         depths = np.zeros((2, 3, 4), dtype=np.float32)
         with (
