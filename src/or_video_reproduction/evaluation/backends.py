@@ -143,7 +143,7 @@ def fvd_i3d_embeddings(
     with graph.as_default():
         placeholder = tf.placeholder(tf.float32, [16, frame_count, 224, 224, 3])
         preprocessed = official.preprocess(placeholder, (224, 224))
-        embeddings = official.create_id3_embedding(preprocessed, batch_size=16)
+        embeddings = official.create_id3_embedding(preprocessed)
         initializer = tf.group(tf.global_variables_initializer(), tf.tables_initializer())
     output: list[np.ndarray] = []
     with tf.Session(graph=graph) as session:
@@ -155,7 +155,9 @@ def fvd_i3d_embeddings(
                 frames = first if start == 0 and path == videos[0] else decode_rgb_video(path, resize=(224, 224))
                 if len(frames) != frame_count:
                     raise ValueError("All FVD videos must have the same frame count")
-                decoded.append(frames.astype(np.float32) / 255.0)
+                # The official preprocess function expects RGB values in [0, 255]
+                # and performs the conversion to the I3D [-1, 1] range itself.
+                decoded.append(frames.astype(np.float32))
             valid = len(decoded)
             decoded.extend([decoded[-1]] * (16 - valid))
             output.append(session.run(embeddings, feed_dict={placeholder: np.stack(decoded)})[:valid])
