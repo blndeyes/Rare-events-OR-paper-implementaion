@@ -1,0 +1,42 @@
+# Reproduction hypotheses for evaluation details omitted by arXiv:2602.21365.
+paired_metrics:
+  alignment: strict_same_frames_resolution_fps
+  aggregation: mean_over_frames_then_videos
+  psnr:
+    data_range: 255
+  ssim:
+    data_range: 255
+    gaussian_window: 11
+    gaussian_sigma: 1.5
+  lpips:
+    package: lpips
+    version: 0.1.4
+    network: alex
+    calibration_version: "0.1"
+
+distribution_metrics:
+  fvd:
+    implementation: google-research/frechet_video_distance
+    embedding: deepmind_i3d_kinetics_400
+    resolution: [224, 224]
+    official_fixed_batch_size: 16
+  inception_score:
+    # The paper does not identify its Inception model or temporal aggregation.
+    implementation: torchvision_inception_v3
+    weights: IMAGENET1K_V1
+    unit: generated_rgb_frame
+    splits: 10
+  dover:
+    implementation: VQAssessment/DOVER/evaluate_one_video.py
+    output: normalized_fused_overall_score
+
+structural_metrics:
+  source: semantic_label_maps
+  background_label: 0
+  aggregation: macro_over_present_frame_class_pairs_then_videos
+  bounding_boxes: tight_axis_aligned_boxes_from_masks
+
+downstream_metrics:
+  classification:
+    metrics: [accuracy, positive_class_recall]
+    positive_label: 1

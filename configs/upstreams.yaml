@@ -26,3 +26,27 @@ sam2:
   checkpoint: sam2.1_hiera_large.pt
   config: configs/sam2.1/sam2.1_hiera_l.yaml
   selection_basis: official video-predictor example; paper does not name model size
+
+# Evaluation backends are reproduction hypotheses because the target paper names
+# metrics but does not identify implementation snapshots or preprocessing.
+google_research_fvd:
+  repository: https://github.com/google-research/google-research
+  commit: 08a8d6736475776f42ffac23b2c13111a28e5795
+  module: frechet_video_distance/frechet_video_distance.py
+  embedding: deepmind_i3d_kinetics_400
+  selection_basis: official implementation snapshot audited for this reproduction
+
+dover:
+  repository: https://github.com/VQAssessment/DOVER
+  commit: f1ddc96215bc7fbcf8f315c65d47905f339c3419
+  entrypoint: evaluate_one_video.py
+  output: normalized_fused_overall_score
+  selection_basis: official implementation snapshot audited for this reproduction
+
+lpips:
+  repository: https://github.com/richzhang/PerceptualSimilarity
+  commit: 082bb24f84c091ea94de2867d34c4544f68e0963
+  pypi_package: lpips==0.1.4
+  network: alex
+  calibration_version: "0.1"
+  selection_basis: official released package and source snapshot

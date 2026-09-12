@@ -20,6 +20,11 @@ dev = [
   "pytest>=8,<9",
   "ruff>=0.11,<1",
 ]
+evaluation = [
+  "lpips==0.1.4",
+  "torch>=2.6,<3",
+  "torchvision>=0.21,<1",
+]
 
 [project.scripts]
 or-dataset-inventory = "or_video_reproduction.data.inventory:main"
@@ -37,6 +42,7 @@ or-run-ltx-batch = "or_video_reproduction.preprocessing.ltx_batch:main"
 or-validate-training-pairs = "or_video_reproduction.preprocessing.validate_pairs:main"
 or-smoke-ic-lora = "or_video_reproduction.training.ic_lora_smoke:main"
 or-run-ic-lora-one-step = "or_video_reproduction.training.one_step:main"
+or-evaluate-videos = "or_video_reproduction.evaluation.runner:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
