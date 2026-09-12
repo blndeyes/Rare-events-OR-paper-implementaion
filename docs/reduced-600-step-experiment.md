@@ -73,7 +73,7 @@ PYTHONPATH=src "$PYTHON" -m or_video_reproduction.preprocessing.ltx_batch \
   --ltx-root /scratch/irtaza/upstreams/ltx-video \
   --output-root "$RUN/ltx-targets" \
   --prompt "Fixed overhead surveillance view of an operating room." \
-  --seed 42 --precision bf16 --fail-fast
+  --seed 42 --precision bf16 --reload-pipeline-after-each-clip --fail-fast
 
 PYTHONPATH=src "$PYTHON" -m or_video_reproduction.preprocessing.geometry_batch \
   --batch-manifest "$RUN/split/batch.json" \

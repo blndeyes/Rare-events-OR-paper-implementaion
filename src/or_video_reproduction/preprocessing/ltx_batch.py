@@ -3,22 +3,22 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+import gc
 import importlib
 import inspect
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
 import time
-from typing import Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
 
 from or_video_reproduction.data.clips import validate_clip_manifest
 
 from .ltx_interpolation import PINNED_LTX_COMMIT, PIPELINE_CONFIGS, _git_head
-
 
 CLIP_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -44,7 +44,7 @@ def load_batch_jobs(path: Path, *, default_seed: int) -> list[BatchJob]:
     seen: set[str] = set()
     for row in rows:
         if not isinstance(row, dict):
-            raise ValueError("Each batch clip must be an object")
+            raise TypeError("Each batch clip must be an object")
         clip_id = row.get("id")
         manifest_value = row.get("manifest")
         if not isinstance(clip_id, str) or not CLIP_ID_PATTERN.fullmatch(clip_id):
@@ -55,7 +55,7 @@ def load_batch_jobs(path: Path, *, default_seed: int) -> list[BatchJob]:
             raise ValueError(f"Clip {clip_id} has no manifest path")
         seed = row.get("seed", default_seed)
         if not isinstance(seed, int):
-            raise ValueError(f"Clip {clip_id} seed must be an integer")
+            raise TypeError(f"Clip {clip_id} seed must be an integer")
         manifest_path = Path(manifest_value)
         if not manifest_path.is_absolute():
             manifest_path = path.parent / manifest_path
@@ -115,6 +115,18 @@ def _write_status(path: Path, payload: dict[str, object]) -> None:
     temporary.replace(path)
 
 
+def _release_pipeline_memory() -> None:
+    """Drop unreachable modules and return cached CUDA blocks to the allocator."""
+
+    gc.collect()
+    try:
+        import torch
+    except ImportError:
+        return
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def _load_reusable_inference(ltx_root: Path):
     if _git_head(ltx_root) != PINNED_LTX_COMMIT:
         raise ValueError(f"LTX checkout must be pinned to {PINNED_LTX_COMMIT}")
@@ -167,6 +179,7 @@ def run_batch(
     prompt: str,
     precision: str,
     fail_fast: bool,
+    reload_pipeline_after_each_clip: bool = False,
 ) -> dict[str, int]:
     if not prompt.strip():
         raise ValueError("An explicit interpolation prompt is required")
@@ -240,9 +253,13 @@ def run_batch(
                     "validation": probe_video(output),
                 },
             )
+            if reload_pipeline_after_each_clip:
+                pipeline = None
+                _release_pipeline_memory()
         except Exception as error:
             counts["failed"] += 1
             pipeline = None
+            _release_pipeline_memory()
             _write_status(
                 status_path,
                 {
@@ -272,6 +289,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--precision", choices=sorted(PIPELINE_CONFIGS), default="fp8")
     parser.add_argument("--max-clips", type=int)
     parser.add_argument("--fail-fast", action="store_true")
+    parser.add_argument(
+        "--reload-pipeline-after-each-clip",
+        action="store_true",
+        help=(
+            "Release the pipeline and CUDA cache after every completed clip. "
+            "Use for BF16 batches when the pinned reusable pipeline retains GPU memory."
+        ),
+    )
     return parser
 
 
@@ -290,6 +315,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         prompt=args.prompt,
         precision=args.precision,
         fail_fast=args.fail_fast,
+        reload_pipeline_after_each_clip=args.reload_pipeline_after_each_clip,
     )
     print(json.dumps(counts, indent=2, sort_keys=True))
     return 1 if counts["failed"] else 0
