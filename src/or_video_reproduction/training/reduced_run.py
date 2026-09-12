@@ -66,7 +66,10 @@ def build_reduced_run_config(
         {
             "prompts": [],
             "images": None,
-            "reference_videos": None,
+            # The pinned trainer requires a non-None list for reference-video
+            # conditioning even when validation is disabled.  An empty list matches
+            # the empty prompt list without scheduling any validation samples.
+            "reference_videos": [],
             "video_dims": [1024, 768, 97],
             "seed": 42,
             "inference_steps": 50,

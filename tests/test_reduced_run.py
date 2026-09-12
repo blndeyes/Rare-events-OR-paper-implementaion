@@ -49,6 +49,8 @@ class ReducedRunTests(unittest.TestCase):
         self.assertIsNone(result["acceleration"]["quantization"])
         self.assertEqual(result["checkpoints"], {"interval": 100, "keep_last_n": -1})
         self.assertIsNone(result["validation"]["interval"])
+        self.assertEqual(result["validation"]["prompts"], [])
+        self.assertEqual(result["validation"]["reference_videos"], [])
 
     def test_metrics_are_fsynced_per_step_and_validate_exact_sequence(self) -> None:
         with TemporaryDirectory() as directory:
