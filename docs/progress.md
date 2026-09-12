@@ -3,13 +3,14 @@
 ## Status
 
 - **Overall:** `in_progress`
-- **Current phase:** BF16 tiny-overfit validation and clip-policy construction
-- **Latest verified accomplishment:** the resumable VDA/SAM2/ellipse batch completed a
-  real 97-frame sample, passed strict pair validation, and skipped all work on rerun.
-- **Current blockers:** the tiny-overfit checkpoint's generated response is not yet
-  verified, and the authors' exact 338/50 clip identities remain undisclosed.
-- **Next action:** finish tiny-overfit inference on irtazastone, and review an
-  explicitly hypothetical clip-selection policy before freezing any 338/50 split.
+- **Current phase:** reduced 30-video / 600-step baseline preparation
+- **Latest verified accomplishment:** local take-disjoint selection, persistent
+  per-step CSV logging, checkpoint audits, and corrected first-frame-plus-ellipse
+  inference plumbing pass the repository test suite.
+- **Current blockers:** the dataset and GPU-only stages must run on `irtazastone`; the
+  paper's exact clip identities and several choices remain undisclosed.
+- **Next action:** run the disk/worktree preflight and freeze the labeled 30-train /
+  6-held-out take-disjoint hypothesis on `irtazastone`.
 
 ## Area status
 
@@ -18,16 +19,16 @@
 | Source and dataset audit | `passed` | `docs/source-audit.md`; `docs/dataset-audit.md` | Recheck only if sources or datasets change |
 | Paper-shaped smoke clip | `passed` | `/tmp/mmor-smoke-clip.json` on `IRTAZAPC`; `tests/test_clips.py` | Retain as preprocessing gate |
 | Exact 338/50 clip construction | `blocked` | Action-run theory yields 336 before file checks but only 216 usable clips; paper omits selection | Obtain author guidance or approve a labeled hypothesis |
-| Candidate train/ablation manifests | `passed` | Deterministic selector finds 4,608 eligible one-camera, five-second-stride windows | Review cameras/takes/stride/seed before explicit acknowledgement |
+| Candidate train/held-out manifests | `passed_local` | Selector now supports deterministic take-disjoint 30/6 selection | Freeze and inspect the real remote manifest |
 | Frozen train/evaluation manifests | `not_started` | `configs/paper_table1.yaml` still has `split_manifest: null` | Freeze only after the hypothesis is accepted |
 | Ellipse and semantic rendering | `passed` | 97-frame 1024x768 black-canvas conditioning MP4 and contact sheet | Preserve exact representation in training loader |
 | LTX temporal interpolation | `passed` | 97 frames at 24 fps and 1024x768; anchor PSNR 28.82--32.94 dB and SSIM 0.9038--0.9517 | Use persistent resumable batch runner after manifests freeze |
 | SAM2 propagation | `passed` | Reusable SAM2.1 Hiera Large runner produces 97 masks at about 18 fps | Run through resumable geometry batch |
 | Video Depth Anything | `passed` | Reusable ViT-L runner produces finite float32 `(97, 768, 1024)` depth | Run through resumable geometry batch |
 | Full geometry batch | `passed` | Real sample completed and strict rerun returned `skipped_valid_existing` | Execute on accepted clip manifest |
-| IC-LoRA training | `in_progress` | User-provided stone log loads BF16 LoRA checkpoint step 80; inference traceback is incomplete | Complete tiny-overfit response test |
+| IC-LoRA training | `ready_for_reduced_run` | Fresh BF16 600-step launcher records every step and audits six checkpoints | Complete 30-pair preprocessing, then launch under tmux |
 | PatchGAN | `blocked` | Paper omits architecture, inputs, loss, weight, and schedule | Seek supervisor guidance; keep optional and isolated |
-| Table 1 evaluation | `not_started` | Exact test clips and metric implementations are unresolved | Freeze manifests and metric contract before evaluation |
+| Corrected reduced evaluation | `ready_for_remote` | Runner requires target frame zero plus ellipse video and generated-only output | Generate fixed-seed samples for multiple checkpoints |
 | Experiment registry | `not_started` | No registry file or run records in the repository | Add schema before the first model execution |
 
 ## Completed work
@@ -136,7 +137,7 @@ overfit gate has not passed. No Table 1 metric has been produced.
 
 ## Latest update
 
-- **Date:** 2026-09-11 (Asia/Karachi)
-- **Verified implementation commit:** `eccd91c`
-- **Remote verification:** `IRTAZAPC` passed all 50 tests; the real geometry batch
-  completed once and skipped valid outputs on rerun.
+- **Date:** 2026-09-12 (Asia/Karachi)
+- **Local verification:** 72 tests pass; changed and new files pass Ruff.
+- **Remote verification:** pending the `irtazastone` disk/worktree preflight. The last
+  verified remote preprocessing evidence remains the 24-pair strict-validation run.

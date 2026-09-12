@@ -1,0 +1,25 @@
+diff --git a/src/ltxv_trainer/trainer.py b/src/ltxv_trainer/trainer.py
+index 65abf5d..1b325f0 100644
+--- a/src/ltxv_trainer/trainer.py
++++ b/src/ltxv_trainer/trainer.py
+@@ -746,6 +746,6 @@ class LtxvTrainer:
+                 "guidance_scale": self._config.validation.guidance_scale,
+                 "generator": generator,
+-                "output_reference_comparison": True,
++                "output_reference_comparison": False,
+             }
+
+             # Load and add first frame image, if provided
+@@ -753,10 +753,10 @@ class LtxvTrainer:
+             if use_images:
+                 image_path = self._config.validation.images[j]
+                 image = open_image_as_srgb(image_path)
+-                if image.size != (height, width):
++                if image.size != (width, height):
+                     # Resize and center crop the image to match the validation video dimensions
+                     image = F.resize(image, size=min(width, height))
+-                    image = F.center_crop(image, output_size=(width, height))
++                    image = F.center_crop(image, output_size=(height, width))
+                 pipeline_inputs["image"] = image
+
+             # Load and add reference video, if provided

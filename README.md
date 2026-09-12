@@ -58,4 +58,5 @@ committed.
 - [Ambiguities register](docs/ambiguities.md)
 - [Supervisor questions](docs/supervisor-questions.md)
 - [Verification checkpoints](docs/verification-guide.md)
+- [Reduced 30-video / 600-step experiment](docs/reduced-600-step-experiment.md)
 - [Agent project brief](docs/agent-prompt.md)

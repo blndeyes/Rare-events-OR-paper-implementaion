@@ -1,10 +1,11 @@
 import json
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
 from or_video_reproduction.data.selection import (
     deterministic_split,
+    deterministic_take_disjoint_split,
     enumerate_eligible_clips,
     resolve_take_names,
     write_hypothesis_split,
@@ -82,6 +83,47 @@ class SelectionTests(unittest.TestCase):
     def test_rejects_insufficient_pool(self) -> None:
         with self.assertRaisesRegex(ValueError, "Need 388 eligible clips"):
             deterministic_split([], train_count=338, ablation_count=50, seed=42)
+
+    def test_take_disjoint_split_is_diverse_and_deterministic(self) -> None:
+        eligible = []
+        for take_index in range(8):
+            for clip_index in range(3):
+                take = f"take-{take_index:02d}"
+                eligible.append(
+                    {
+                        "clip": {
+                            "take": take,
+                            "clip_id": f"{take}-clip-{clip_index:02d}",
+                        }
+                    }
+                )
+
+        first = deterministic_take_disjoint_split(
+            eligible, train_count=5, validation_count=2, seed=42
+        )
+        second = deterministic_take_disjoint_split(
+            eligible, train_count=5, validation_count=2, seed=42
+        )
+        train, validation = first
+        train_takes = {row["clip"]["take"] for row in train}
+        validation_takes = {row["clip"]["take"] for row in validation}
+
+        self.assertEqual(first, second)
+        self.assertEqual(len(train), 5)
+        self.assertEqual(len(train_takes), 5)
+        self.assertEqual(len(validation), 2)
+        self.assertEqual(len(validation_takes), 2)
+        self.assertFalse(train_takes & validation_takes)
+
+    def test_take_disjoint_split_fails_without_enough_takes(self) -> None:
+        eligible = [
+            {"clip": {"take": "only", "clip_id": f"clip-{index}"}}
+            for index in range(20)
+        ]
+        with self.assertRaisesRegex(ValueError, "eligible takes"):
+            deterministic_take_disjoint_split(
+                eligible, train_count=5, validation_count=1, seed=42
+            )
 
     def test_all_take_alias_is_explicit_and_not_mixable(self) -> None:
         self.assertGreater(len(resolve_take_names(["all"])), 30)

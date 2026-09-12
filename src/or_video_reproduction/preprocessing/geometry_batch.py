@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
-from pathlib import Path
 import time
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -30,6 +30,7 @@ class GeometryJob:
     target_video: Path
     first_mask: Path
     split: str
+    take: str | None = None
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -75,6 +76,7 @@ def load_geometry_jobs(
                 target_video=target_video,
                 first_mask=first_mask,
                 split=manifest["clip"]["split"],
+                take=manifest["clip"]["take"],
             )
         )
     return jobs
@@ -157,6 +159,7 @@ def run_geometry_batch(
                 {
                     "id": job.clip_id,
                     "split": job.split,
+                    "take": job.take,
                     **existing_report["paths"],
                 }
             )
@@ -197,6 +200,7 @@ def run_geometry_batch(
                 {
                     "id": job.clip_id,
                     "split": job.split,
+                    "take": job.take,
                     **validation["paths"],
                 }
             )
