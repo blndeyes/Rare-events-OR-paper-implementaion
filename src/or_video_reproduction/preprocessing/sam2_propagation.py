@@ -17,6 +17,7 @@ from or_video_reproduction.data.semantics import (
     MMOR_ARTIFACT_LABELS,
     MMOR_SEGMENTATION_LABELS,
 )
+from or_video_reproduction.data.four_dor import FOUR_DOR_TO_MMOR_MAPPING
 
 
 PINNED_SAM2_COMMIT = "2b90b9f5ceec907a1c18123530e92e794ad901a4"
@@ -189,6 +190,141 @@ class Sam2VideoRunner:
             output_path,
             checkpoint_path=self.checkpoint_path,
         )
+
+    def run_points(
+        self, video_path: Path, prompt_manifest: Path, output_path: Path
+    ) -> dict[str, object]:
+        return _propagate_point_prompts_with_predictor(
+            self.predictor,
+            video_path,
+            prompt_manifest,
+            output_path,
+            checkpoint_path=self.checkpoint_path,
+        )
+
+
+def load_point_prompt_manifest(path: Path) -> list[dict[str, object]]:
+    """Validate manual normalized 4D-OR point prompts and semantic mappings."""
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != 1 or payload.get("dataset") != "4DOR":
+        raise ValueError("Point prompt manifest must be schema version 1 for 4DOR")
+    if payload.get("coordinate_system") != "normalized_xy":
+        raise ValueError("4D-OR point prompts must use normalized_xy coordinates")
+    instances = payload.get("instances")
+    if not isinstance(instances, list) or not instances:
+        raise ValueError(f"Manual point prompts are incomplete: {path}")
+    validated: list[dict[str, object]] = []
+    seen: set[int] = set()
+    for instance in instances:
+        if not isinstance(instance, dict):
+            raise ValueError("Each point-prompt instance must be an object")
+        object_id = instance.get("object_id")
+        source_class = instance.get("four_dor_class")
+        mapped_class = instance.get("mmor_class")
+        points = instance.get("points")
+        labels = instance.get("point_labels")
+        if not isinstance(object_id, int) or not 1 <= object_id <= 255 or object_id in seen:
+            raise ValueError("object_id values must be unique integers in [1,255]")
+        if not isinstance(source_class, str) or source_class not in FOUR_DOR_TO_MMOR_MAPPING:
+            raise ValueError(f"Unsupported or ambiguous 4D-OR class: {source_class!r}")
+        expected_class = FOUR_DOR_TO_MMOR_MAPPING[source_class]
+        if mapped_class != expected_class or mapped_class not in ENTITY_CLASSES:
+            raise ValueError(
+                f"Mapping for {source_class!r} must be MMOR class {expected_class!r}"
+            )
+        if not isinstance(points, list) or not points or not isinstance(labels, list):
+            raise ValueError(f"Object {object_id} requires points and point_labels")
+        if len(points) != len(labels) or any(label not in (0, 1) for label in labels):
+            raise ValueError(f"Object {object_id} point and binary-label counts differ")
+        normalized_points = []
+        for point in points:
+            if (
+                not isinstance(point, list)
+                or len(point) != 2
+                or not all(isinstance(value, (int, float)) for value in point)
+                or not all(0.0 <= float(value) <= 1.0 for value in point)
+            ):
+                raise ValueError(f"Object {object_id} has invalid normalized point {point!r}")
+            normalized_points.append([float(point[0]), float(point[1])])
+        validated.append(
+            {
+                "object_id": object_id,
+                "four_dor_class": source_class,
+                "mmor_class": mapped_class,
+                "points": normalized_points,
+                "point_labels": [int(value) for value in labels],
+            }
+        )
+        seen.add(object_id)
+    return validated
+
+
+def _propagate_point_prompts_with_predictor(
+    predictor,
+    video_path: Path,
+    prompt_manifest: Path,
+    output_path: Path,
+    *,
+    checkpoint_path: Path,
+) -> dict[str, object]:
+    """Initialize SAM2 with manual 4D-OR points and propagate unique instances."""
+
+    if not video_path.is_file():
+        raise FileNotFoundError(video_path)
+    instances = load_point_prompt_manifest(prompt_manifest)
+    import torch
+
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+        state = predictor.init_state(
+            str(video_path), offload_video_to_cpu=True, offload_state_to_cpu=True
+        )
+        width, height = int(state["video_width"]), int(state["video_height"])
+        for instance in instances:
+            points = np.asarray(instance["points"], dtype=np.float32)
+            points[:, 0] *= max(0, width - 1)
+            points[:, 1] *= max(0, height - 1)
+            predictor.add_new_points_or_box(
+                state,
+                frame_idx=0,
+                obj_id=int(instance["object_id"]),
+                points=points,
+                labels=np.asarray(instance["point_labels"], dtype=np.int32),
+            )
+
+        frames: dict[int, NDArray[np.uint8]] = {}
+        for frame_index, propagated_ids, mask_logits in predictor.propagate_in_video(state):
+            logits = mask_logits[:, 0].float().cpu().numpy()
+            frames[int(frame_index)] = compose_label_frame(propagated_ids, logits)
+
+    expected_frames = int(state["num_frames"])
+    missing = sorted(set(range(expected_frames)) - frames.keys())
+    if missing:
+        raise RuntimeError(f"SAM2 did not return frames: {missing}")
+    labels = np.stack([frames[index] for index in range(expected_frames)])
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(output_path, labels=labels)
+    class_map = {str(row["object_id"]): row["mmor_class"] for row in instances}
+    metadata: dict[str, object] = {
+        "schema_version": 1,
+        "kind": "sam2.1_hiera_large_manual_point_propagation",
+        "dataset": "4DOR",
+        "sam2_revision": PINNED_SAM2_COMMIT,
+        "sam2_config": SAM2_CONFIG,
+        "video_path": str(video_path),
+        "prompt_manifest": str(prompt_manifest),
+        "shape": list(labels.shape),
+        "dtype": str(labels.dtype),
+        "instance_classes": class_map,
+        "instances": instances,
+        "coordinate_conversion": "normalized xy multiplied by (width-1,height-1)",
+        "overlap_resolution": "maximum positive SAM2 mask logit; otherwise background",
+        "memory_policy": "offload video frames and inference state to CPU",
+    }
+    output_path.with_suffix(".json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return metadata
 
 
 def propagate_first_frame_mask(

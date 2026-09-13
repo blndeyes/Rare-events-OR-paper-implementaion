@@ -1,0 +1,24 @@
+# Explicit reproduction hypotheses for manual 4D-OR prompts. Values are MMOR
+# paper-36 entity names. Ambiguous generic "human" labels must be manually assigned
+# a clinical role and are intentionally absent.
+mapping:
+  anaesthetist: anaesthetist
+  anesthetist: anaesthetist
+  anesthesiologist: anaesthetist
+  anesthesia_equipment: anesthesia_equipment
+  assistant_surgeon: assistant_surgeon
+  circulating_nurse: circulator
+  circulator: circulator
+  head_surgeon: head_surgeon
+  instrument: instrument
+  instrument_table: instrument_table
+  nurse: nurse
+  operating_table: operating_table
+  patient: patient
+  secondary_table: instrument_table
+
+unsupported_without_manual_decision:
+  - human
+  - object
+
+classification: reproduction_hypothesis_not_author_mapping

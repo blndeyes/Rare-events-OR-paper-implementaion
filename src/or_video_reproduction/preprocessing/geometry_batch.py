@@ -18,7 +18,7 @@ from or_video_reproduction.data.semantics import (
 from or_video_reproduction.geometry.render_sequence import render_sequence
 
 from .ltx_batch import load_batch_jobs, video_matches_contract
-from .sam2_propagation import Sam2VideoRunner
+from .sam2_propagation import Sam2VideoRunner, load_point_prompt_manifest
 from .validate_pairs import EXPECTED_SHAPE, PairJob, validate_pair
 from .vda_depth import VideoDepthRunner, validate_depth_output
 
@@ -28,9 +28,11 @@ class GeometryJob:
     clip_id: str
     clip_manifest: Path
     target_video: Path
-    first_mask: Path
+    first_mask: Path | None
     split: str
     take: str | None = None
+    prompt_manifest: Path | None = None
+    label_classes: dict[int, str] | None = None
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -65,10 +67,27 @@ def load_geometry_jobs(
         if not video_matches_contract(target_video, manifest["paper_contract"]):
             raise ValueError(f"LTX output for {source.clip_id} fails its video contract")
 
-        mask_relative = manifest["clip"]["first_frame_ground_truth_mask"]
-        first_mask = dataset_root / Path(*Path(mask_relative).parts)
-        if not first_mask.is_file():
-            raise FileNotFoundError(first_mask)
+        clip = manifest["clip"]
+        first_mask = None
+        prompt_manifest = None
+        label_classes = None
+        if "first_frame_ground_truth_mask" in clip:
+            mask_relative = clip["first_frame_ground_truth_mask"]
+            first_mask = dataset_root / Path(*Path(mask_relative).parts)
+            if not first_mask.is_file():
+                raise FileNotFoundError(first_mask)
+        elif "first_frame_prompt_manifest" in clip:
+            prompt_manifest = Path(clip["first_frame_prompt_manifest"])
+            if not prompt_manifest.is_absolute():
+                prompt_manifest = (source.manifest_path.parent / prompt_manifest).resolve()
+            prompt_rows = load_point_prompt_manifest(prompt_manifest)
+            label_classes = {
+                int(row["object_id"]): str(row["mmor_class"]) for row in prompt_rows
+            }
+        else:
+            raise ValueError(
+                f"{source.clip_id} requires a first-frame mask or point-prompt manifest"
+            )
         jobs.append(
             GeometryJob(
                 clip_id=source.clip_id,
@@ -77,6 +96,8 @@ def load_geometry_jobs(
                 first_mask=first_mask,
                 split=manifest["clip"]["split"],
                 take=manifest["clip"]["take"],
+                prompt_manifest=prompt_manifest,
+                label_classes=label_classes,
             )
         )
     return jobs
@@ -98,7 +119,7 @@ def depth_is_valid(path: Path) -> bool:
         return False
 
 
-def labels_are_valid(path: Path) -> bool:
+def labels_are_valid(path: Path, *, allowed_labels: set[int] | None = None) -> bool:
     if not path.is_file():
         return False
     try:
@@ -107,7 +128,11 @@ def labels_are_valid(path: Path) -> bool:
         return False
     if labels.shape != EXPECTED_SHAPE or not np.issubdtype(labels.dtype, np.integer):
         return False
-    known = {0, *MMOR_SEGMENTATION_LABELS, *MMOR_ARTIFACT_LABELS}
+    known = (
+        {0, *allowed_labels}
+        if allowed_labels is not None
+        else {0, *MMOR_SEGMENTATION_LABELS, *MMOR_ARTIFACT_LABELS}
+    )
     return all(int(value) in known for value in np.unique(labels))
 
 
@@ -160,6 +185,11 @@ def run_geometry_batch(
                     "id": job.clip_id,
                     "split": job.split,
                     "take": job.take,
+                    **(
+                        {"prompt_manifest": str(job.prompt_manifest)}
+                        if job.prompt_manifest is not None
+                        else {}
+                    ),
                     **existing_report["paths"],
                 }
             )
@@ -183,13 +213,23 @@ def run_geometry_batch(
                     vda_runner = vda_factory()
                 vda_runner.run(job.target_video, depths_path)
                 stages.append("video_depth_anything")
-            if not labels_are_valid(labels_path):
+            allowed_labels = set(job.label_classes) if job.label_classes is not None else None
+            if not labels_are_valid(labels_path, allowed_labels=allowed_labels):
                 if sam2_runner is None:
                     sam2_runner = sam2_factory()
-                sam2_runner.run(job.target_video, job.first_mask, labels_path)
+                if job.prompt_manifest is not None:
+                    sam2_runner.run_points(job.target_video, job.prompt_manifest, labels_path)
+                else:
+                    assert job.first_mask is not None
+                    sam2_runner.run(job.target_video, job.first_mask, labels_path)
                 stages.append("sam2")
 
-            render_sequence(labels_path, depths_path, conditioning_dir)
+            render_sequence(
+                labels_path,
+                depths_path,
+                conditioning_dir,
+                label_classes=job.label_classes,
+            )
             stages.append("ellipse_rendering")
             validation = validate_pair(pair)
             if validation["state"] != "passed":
@@ -201,6 +241,11 @@ def run_geometry_batch(
                     "id": job.clip_id,
                     "split": job.split,
                     "take": job.take,
+                    **(
+                        {"prompt_manifest": str(job.prompt_manifest)}
+                        if job.prompt_manifest is not None
+                        else {}
+                    ),
                     **validation["paths"],
                 }
             )

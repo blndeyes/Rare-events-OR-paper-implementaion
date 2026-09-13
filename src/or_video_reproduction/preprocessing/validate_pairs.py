@@ -84,7 +84,10 @@ def load_pair_jobs(path: Path) -> list[PairJob]:
 
 
 def validate_label_and_depth_arrays(
-    labels: np.ndarray, depths: np.ndarray
+    labels: np.ndarray,
+    depths: np.ndarray,
+    *,
+    allowed_instance_labels: set[int] | None = None,
 ) -> dict[str, object]:
     errors: list[str] = []
     if labels.shape != EXPECTED_SHAPE:
@@ -99,10 +102,14 @@ def validate_label_and_depth_arrays(
         errors.append("depths contain NaN or infinite values")
 
     observed = sorted(int(value) for value in np.unique(labels))
-    known_labels = set(MMOR_SEGMENTATION_LABELS) | set(MMOR_ARTIFACT_LABELS)
+    known_labels = (
+        allowed_instance_labels
+        if allowed_instance_labels is not None
+        else set(MMOR_SEGMENTATION_LABELS) | set(MMOR_ARTIFACT_LABELS)
+    )
     unknown = sorted(value for value in observed if value and value not in known_labels)
     if unknown:
-        errors.append(f"labels contain unknown MMOR values: {unknown}")
+        errors.append(f"labels contain unknown instance values: {unknown}")
     return {"passed": not errors, "errors": errors, "observed_labels": observed}
 
 
@@ -182,11 +189,17 @@ def validate_pair(
             "observed": conditioning_probe,
             "expected": expected_video,
         }
+        metadata = json.loads(job.geometry_metadata.read_text(encoding="utf-8"))
+        label_classes = metadata.get("label_classes")
+        allowed = None
+        if isinstance(label_classes, dict):
+            allowed = {int(value) for value in label_classes}
         arrays = validate_label_and_depth_arrays(
-            _load_array(job.labels, "labels"), _load_array(job.depths, "depths")
+            _load_array(job.labels, "labels"),
+            _load_array(job.depths, "depths"),
+            allowed_instance_labels=allowed,
         )
         report["checks"]["arrays"] = arrays
-        metadata = json.loads(job.geometry_metadata.read_text(encoding="utf-8"))
         report["checks"]["geometry"] = validate_geometry_metadata(metadata)
     except Exception as error:
         report["error_type"] = type(error).__name__

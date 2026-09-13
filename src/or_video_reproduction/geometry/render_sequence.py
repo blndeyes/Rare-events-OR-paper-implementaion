@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -27,6 +27,7 @@ def instances_from_frame(
     depth: NDArray[np.floating],
     *,
     smaller_is_nearer: bool,
+    label_classes: Mapping[int, str] | None = None,
 ) -> tuple[list[RenderInstance], list[dict[str, object]]]:
     """Fit one ellipse to each supported semantic entity in a frame."""
 
@@ -43,7 +44,11 @@ def instances_from_frame(
         raw_label = int(raw_value)
         if raw_label == 0:
             continue
-        class_name = MMOR_SEGMENTATION_LABELS.get(raw_label)
+        class_name = (
+            label_classes.get(raw_label)
+            if label_classes is not None
+            else MMOR_SEGMENTATION_LABELS.get(raw_label)
+        )
         if class_name not in ENTITY_CLASSES:
             skipped.append(
                 {
@@ -84,9 +89,13 @@ def render_frame(
     depth: NDArray[np.floating],
     *,
     smaller_is_nearer: bool,
+    label_classes: Mapping[int, str] | None = None,
 ) -> tuple[NDArray[np.uint8], list[RenderInstance], list[dict[str, object]]]:
     instances, skipped = instances_from_frame(
-        labels, depth, smaller_is_nearer=smaller_is_nearer
+        labels,
+        depth,
+        smaller_is_nearer=smaller_is_nearer,
+        label_classes=label_classes,
     )
     image = render_conditioning(
         instances,
@@ -112,6 +121,7 @@ def render_sequence(
     *,
     fps: int = 24,
     smaller_is_nearer: bool = False,
+    label_classes: Mapping[int, str] | None = None,
 ) -> dict[str, object]:
     labels = _load_array(labels_path, "labels")
     depths = _load_array(depth_path, "depths")
@@ -132,9 +142,8 @@ def render_sequence(
 
     for frame_index in range(labels.shape[0]):
         image_array, instances, skipped = render_frame(
-            labels[frame_index],
-            depths[frame_index],
-            smaller_is_nearer=smaller_is_nearer,
+            labels[frame_index], depths[frame_index],
+            smaller_is_nearer=smaller_is_nearer, label_classes=label_classes,
         )
         image = Image.fromarray(image_array)
         image.save(frames_dir / f"{frame_index:06d}.png")
@@ -199,6 +208,11 @@ def render_sequence(
         "depth_direction": "smaller_is_nearer" if smaller_is_nearer else "larger_is_nearer",
         "depth_normalization": "per-frame min-max over visible entity instance means",
         "ellipse_fit": "filled-mask second-moment match",
+        "label_classes": (
+            {str(key): value for key, value in sorted(label_classes.items())}
+            if label_classes is not None
+            else None
+        ),
         "contact_frames": contact_indices,
         "video_output": video_name,
         "frames": frame_records,

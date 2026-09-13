@@ -18,8 +18,66 @@ class FakeRunner:
     def run(self, *args) -> None:
         self.calls += 1
 
+    def run_points(self, *args) -> None:
+        self.calls += 1
+
 
 class GeometryBatchTests(unittest.TestCase):
+    def test_four_dor_job_uses_point_prompts_and_explicit_classes(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            prompt = root / "prompt.json"
+            job = GeometryJob(
+                "4dor",
+                root / "manifest.json",
+                root / "target.mp4",
+                None,
+                "table1_ood",
+                "2",
+                prompt,
+                {41: "head_surgeon"},
+            )
+            vda = FakeRunner()
+            sam2 = FakeRunner()
+            observed_classes = []
+
+            def validation(pair):
+                if pair.conditioning_video.is_file():
+                    return {
+                        "state": "passed",
+                        "paths": {
+                            "target_video": str(pair.target_video),
+                            "conditioning_video": str(pair.conditioning_video),
+                            "labels": str(pair.labels),
+                            "depths": str(pair.depths),
+                            "geometry_metadata": str(pair.geometry_metadata),
+                        },
+                    }
+                return {"state": "failed"}
+
+            def render(_labels, _depths, output, **kwargs):
+                observed_classes.append(kwargs["label_classes"])
+                output.mkdir(parents=True)
+                (output / "conditioning.mp4").touch()
+                (output / "metadata.json").write_text("{}", encoding="utf-8")
+
+            with (
+                patch.object(geometry_batch, "depth_is_valid", return_value=False),
+                patch.object(geometry_batch, "labels_are_valid", return_value=False),
+                patch.object(geometry_batch, "render_sequence", side_effect=render),
+                patch.object(geometry_batch, "validate_pair", side_effect=validation),
+            ):
+                report = run_geometry_batch(
+                    [job],
+                    output_root=root / "output",
+                    vda_factory=lambda: vda,
+                    sam2_factory=lambda: sam2,
+                )
+
+        self.assertEqual(report["counts"]["completed"], 1)
+        self.assertEqual(sam2.calls, 1)
+        self.assertEqual(observed_classes, [{41: "head_surgeon"}])
+
     def test_valid_rerun_preserves_original_completion_status(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -82,7 +140,7 @@ class GeometryBatchTests(unittest.TestCase):
                     }
                 return failed_validation
 
-            def render(_labels, _depths, output):
+            def render(_labels, _depths, output, **_kwargs):
                 output.mkdir(parents=True)
                 (output / "conditioning.mp4").touch()
                 (output / "metadata.json").write_text("{}", encoding="utf-8")

@@ -6,6 +6,23 @@ from or_video_reproduction.geometry.render_sequence import render_frame
 
 
 class RenderSequenceTests(unittest.TestCase):
+    def test_external_instance_ids_use_explicit_class_mapping(self) -> None:
+        labels = np.zeros((32, 32), dtype=np.uint8)
+        labels[4:16, 3:12] = 41
+        labels[16:29, 19:30] = 42
+        depth = np.ones((32, 32), dtype=np.float32)
+
+        _, instances, skipped = render_frame(
+            labels,
+            depth,
+            smaller_is_nearer=False,
+            label_classes={41: "head_surgeon", 42: "head_surgeon"},
+        )
+
+        self.assertEqual(len(instances), 2)
+        self.assertEqual({item.key for item in instances}, {"41:head_surgeon", "42:head_surgeon"})
+        self.assertEqual(skipped, [])
+
     def test_renders_only_ellipses_on_black(self) -> None:
         labels = np.zeros((12, 16), dtype=np.uint8)
         labels[2:7, 2:7] = 1
