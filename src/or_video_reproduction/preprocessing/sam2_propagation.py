@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -260,6 +261,21 @@ def load_point_prompt_manifest(path: Path) -> list[dict[str, object]]:
     return validated
 
 
+def point_prompt_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def point_prompt_output_is_current(output_path: Path, prompt_manifest: Path) -> bool:
+    metadata_path = output_path.with_suffix(".json")
+    if not output_path.is_file() or not metadata_path.is_file():
+        return False
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return metadata.get("prompt_manifest_sha256") == point_prompt_sha256(prompt_manifest)
+
+
 def _propagate_point_prompts_with_predictor(
     predictor,
     video_path: Path,
@@ -313,6 +329,7 @@ def _propagate_point_prompts_with_predictor(
         "sam2_config": SAM2_CONFIG,
         "video_path": str(video_path),
         "prompt_manifest": str(prompt_manifest),
+        "prompt_manifest_sha256": point_prompt_sha256(prompt_manifest),
         "shape": list(labels.shape),
         "dtype": str(labels.dtype),
         "instance_classes": class_map,

@@ -11,7 +11,11 @@ from or_video_reproduction.data.four_dor import (
     enumerate_candidates,
     write_selection,
 )
-from or_video_reproduction.preprocessing.sam2_propagation import load_point_prompt_manifest
+from or_video_reproduction.preprocessing.sam2_propagation import (
+    load_point_prompt_manifest,
+    point_prompt_output_is_current,
+    point_prompt_sha256,
+)
 
 
 def build_take(root: Path, *, row_count: int = 10) -> Path:
@@ -78,6 +82,21 @@ class FourDorClipTests(unittest.TestCase):
 
 
 class FourDorPromptTests(unittest.TestCase):
+    def test_stale_prompt_outputs_are_detected(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            prompt = root / "prompt.json"
+            output = root / "labels.npz"
+            prompt.write_text("first", encoding="utf-8")
+            output.touch()
+            output.with_suffix(".json").write_text(
+                json.dumps({"prompt_manifest_sha256": point_prompt_sha256(prompt)}),
+                encoding="utf-8",
+            )
+            self.assertTrue(point_prompt_output_is_current(output, prompt))
+            prompt.write_text("changed", encoding="utf-8")
+            self.assertFalse(point_prompt_output_is_current(output, prompt))
+
     def test_validates_unique_instances_and_mapping(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory) / "prompts.json"

@@ -2,8 +2,10 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from or_video_reproduction.evaluation.four_dor import build_four_dor_evaluation
+import or_video_reproduction.evaluation.four_dor as four_dor_evaluation
 
 
 class FakeSam2Runner:
@@ -52,13 +54,16 @@ class FourDorEvaluationTests(unittest.TestCase):
             )
             runner = FakeSam2Runner()
 
-            report = build_four_dor_evaluation(
-                inference,
-                pairs,
-                output_root=root / "evaluation",
-                sam2_runner=runner,
-                require_six=False,
-            )
+            with patch.object(
+                four_dor_evaluation, "point_prompt_output_is_current", return_value=False
+            ):
+                report = build_four_dor_evaluation(
+                    inference,
+                    pairs,
+                    output_root=root / "evaluation",
+                    sam2_runner=runner,
+                    require_six=False,
+                )
 
         self.assertEqual(len(runner.calls), 1)
         self.assertEqual(report["paper_table1_metrics"], ["fvd", "ssim", "psnr", "lpips"])

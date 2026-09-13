@@ -7,7 +7,10 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from or_video_reproduction.preprocessing.sam2_propagation import Sam2VideoRunner
+from or_video_reproduction.preprocessing.sam2_propagation import (
+    Sam2VideoRunner,
+    point_prompt_output_is_current,
+)
 
 
 def _resolve(base: Path, value: object, field: str) -> Path:
@@ -57,7 +60,7 @@ def build_four_dor_evaluation(
             inference_manifest.parent, inference_row.get("generated_video"), "generated_video"
         )
         generated_masks = masks_root / f"{clip_id}.npz"
-        if not generated_masks.is_file():
+        if not point_prompt_output_is_current(generated_masks, prompt_manifest):
             sam2_runner.run_points(generated_video, prompt_manifest, generated_masks)
         rows.append(
             {

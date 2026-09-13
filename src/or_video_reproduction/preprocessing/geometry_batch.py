@@ -18,7 +18,11 @@ from or_video_reproduction.data.semantics import (
 from or_video_reproduction.geometry.render_sequence import render_sequence
 
 from .ltx_batch import load_batch_jobs, video_matches_contract
-from .sam2_propagation import Sam2VideoRunner, load_point_prompt_manifest
+from .sam2_propagation import (
+    Sam2VideoRunner,
+    load_point_prompt_manifest,
+    point_prompt_output_is_current,
+)
 from .validate_pairs import EXPECTED_SHAPE, PairJob, validate_pair
 from .vda_depth import VideoDepthRunner, validate_depth_output
 
@@ -119,7 +123,12 @@ def depth_is_valid(path: Path) -> bool:
         return False
 
 
-def labels_are_valid(path: Path, *, allowed_labels: set[int] | None = None) -> bool:
+def labels_are_valid(
+    path: Path,
+    *,
+    allowed_labels: set[int] | None = None,
+    prompt_manifest: Path | None = None,
+) -> bool:
     if not path.is_file():
         return False
     try:
@@ -133,7 +142,13 @@ def labels_are_valid(path: Path, *, allowed_labels: set[int] | None = None) -> b
         if allowed_labels is not None
         else {0, *MMOR_SEGMENTATION_LABELS, *MMOR_ARTIFACT_LABELS}
     )
-    return all(int(value) in known for value in np.unique(labels))
+    labels_known = all(int(value) in known for value in np.unique(labels))
+    prompts_current = (
+        point_prompt_output_is_current(path, prompt_manifest)
+        if prompt_manifest is not None
+        else True
+    )
+    return labels_known and prompts_current
 
 
 def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
@@ -178,7 +193,12 @@ def run_geometry_batch(
         )
 
         existing_report = validate_pair(pair)
-        if existing_report["state"] == "passed":
+        prompt_output_current = (
+            point_prompt_output_is_current(labels_path, job.prompt_manifest)
+            if job.prompt_manifest is not None
+            else True
+        )
+        if existing_report["state"] == "passed" and prompt_output_current:
             counts["skipped"] += 1
             samples.append(
                 {
@@ -214,7 +234,11 @@ def run_geometry_batch(
                 vda_runner.run(job.target_video, depths_path)
                 stages.append("video_depth_anything")
             allowed_labels = set(job.label_classes) if job.label_classes is not None else None
-            if not labels_are_valid(labels_path, allowed_labels=allowed_labels):
+            if not labels_are_valid(
+                labels_path,
+                allowed_labels=allowed_labels,
+                prompt_manifest=job.prompt_manifest,
+            ):
                 if sam2_runner is None:
                     sam2_runner = sam2_factory()
                 if job.prompt_manifest is not None:
