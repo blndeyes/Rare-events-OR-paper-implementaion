@@ -141,3 +141,6 @@ and SAM2 evaluation without retraining. Its defaults select
 `1:instrument_table` vector (and require that displacement to be 150–250 pixels),
 and write the required artifacts under
 `/scratch/irtaza/or-repro-artifacts/trajectory-control-step600/`.
+The runner uses the lightweight repository Python for rendering and defaults
+`SAM2_PYTHON` to the PyTorch-enabled trainer environment; either interpreter may
+be overridden explicitly without changing the recorded experiment settings.

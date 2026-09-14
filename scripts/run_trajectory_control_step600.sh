@@ -11,6 +11,7 @@ TRAINER_ROOT="${TRAINER_ROOT:-/scratch/irtaza/upstreams/LTX-Video-Trainer}"
 SAM2_ROOT="${SAM2_ROOT:-/scratch/irtaza/upstreams/sam2}"
 REPO_PYTHON="${REPO_PYTHON:-/home/irtaza/.venv/bin/python}"
 TRAINER_PYTHON="${TRAINER_PYTHON:-/scratch/irtaza/upstreams/LTX-Video-Trainer/.venv/bin/python}"
+SAM2_PYTHON="${SAM2_PYTHON:-$TRAINER_PYTHON}"
 CLIP_ID="${CLIP_ID:-mmor-001_PKA-camera01-timestamp000210}"
 SELECTED_INSTANCE="${SELECTED_INSTANCE:-12:nurse}"
 TARGET_INSTANCE="${TARGET_INSTANCE:-1:instrument_table}"
@@ -37,6 +38,7 @@ unset TRANSFORMERS_CACHE
 for required in \
   "$REPO_PYTHON" \
   "$TRAINER_PYTHON" \
+  "$SAM2_PYTHON" \
   "$PAIR_MANIFEST" \
   "$SOURCE_METADATA" \
   "$SOURCE_CONDITIONING" \
@@ -61,6 +63,13 @@ git -C "$REPO_ROOT" rev-parse HEAD > "$OUTPUT_ROOT/repository-commit.txt"
 git -C "$TRAINER_ROOT" rev-parse HEAD > "$OUTPUT_ROOT/trainer-commit.txt"
 nvidia-smi | tee "$LOG_ROOT/nvidia-smi.log"
 df -h /scratch | tee "$LOG_ROOT/disk-before.log"
+
+PYTHONPATH="$REPO_ROOT/src:$SAM2_ROOT" "$SAM2_PYTHON" \
+  -c 'import torch
+from sam2.build_sam import build_sam2_video_predictor
+print(f"SAM2 import preflight passed with torch {torch.__version__} on {torch.cuda.get_device_name()}")
+print(build_sam2_video_predictor.__module__)' \
+  | tee "$LOG_ROOT/sam2-import-preflight.log"
 
 PYTHONPATH="$REPO_ROOT/src" "$REPO_PYTHON" \
   -c 'import json, math, sys
@@ -136,7 +145,7 @@ print(by_id["original"])
 print(by_id["edited"])' "$OUTPUT_ROOT/inference/inference-manifest.json"
 )
 
-PYTHONPATH="$REPO_ROOT/src:$SAM2_ROOT" "$REPO_PYTHON" \
+PYTHONPATH="$REPO_ROOT/src:$SAM2_ROOT" "$SAM2_PYTHON" \
   -m or_video_reproduction.evaluation.trajectory_control \
   --original-generated "${GENERATED_VIDEOS[0]}" \
   --edited-generated "${GENERATED_VIDEOS[1]}" \
