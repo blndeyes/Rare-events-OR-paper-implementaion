@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 .tmp/
@@ -19,6 +20,7 @@ venv/
 /datasets/
 /artifacts/
 /outputs/
+/trajectory-edits/
 /checkpoints/
 /preprocessed_data/
 /reference_latents/

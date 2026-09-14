@@ -81,6 +81,7 @@ the renderer's depth order. Outputs are:
 
 - `conditioning-edited.mp4`
 - `conditioning-edited-contact-sheet.png`
+- `trajectory-input.json` (portable raw user path for rerendering elsewhere)
 - `metadata.json`
 - `trajectory-edit-manifest.json`
 
@@ -98,7 +99,14 @@ or-edit-ellipse-trajectory-gui \
 
 The GUI uses Tkinter file dialogs, a Pygame event/display loop, and OpenCV drawing.
 Click an ellipse and drag the freehand path. Press Enter to render, `R` to redraw,
-or Escape to cancel. Supplying `--instance-id` preselects the entity.
+or Escape to cancel. Enter completes the one-shot edit and closes the window after
+writing the outputs. Supplying `--instance-id` preselects the entity.
+
+Keep local sessions under the ignored `trajectory-edits/` directory (or `.tmp/`).
+To reproduce an edit on another host, transfer only `trajectory-input.json`, then
+run the non-interactive CLI there against the same source metadata and conditioning
+video. Generated MP4 and expanded metadata files are experiment artifacts rather
+than Git source files.
 
 ## Step-600 control evaluation
 

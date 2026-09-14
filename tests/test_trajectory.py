@@ -22,6 +22,7 @@ from or_video_reproduction.geometry.trajectory import (
     select_instance,
     simplify_waypoints,
 )
+from or_video_reproduction.geometry.trajectory_gui import trajectory_input_payload
 
 
 def find_ffmpeg() -> Path:
@@ -117,6 +118,19 @@ def sequence() -> dict[str, object]:
 
 
 class TrajectoryCoreTests(unittest.TestCase):
+    def test_gui_trajectory_input_is_portable_and_machine_readable(self) -> None:
+        payload = trajectory_input_payload([(10, 20), (30.5, 40.25)], mode="replace", epsilon=2.0)
+
+        self.assertEqual(
+            payload,
+            {
+                "schema_version": 1,
+                "mode": "replace",
+                "simplify_epsilon_pixels": 2.0,
+                "waypoints": [[10.0, 20.0], [30.5, 40.25]],
+            },
+        )
+
     def test_instance_listing_exposes_exact_selection_geometry(self) -> None:
         rows = list_instances(sequence())
 

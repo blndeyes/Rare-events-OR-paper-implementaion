@@ -18,6 +18,19 @@ from .trajectory import (
 )
 
 
+def trajectory_input_payload(
+    waypoints: Sequence[tuple[float, float]], *, mode: str, epsilon: float
+) -> dict[str, object]:
+    """Build the portable input needed to reproduce an interactive path."""
+
+    return {
+        "schema_version": 1,
+        "mode": mode,
+        "simplify_epsilon_pixels": epsilon,
+        "waypoints": [[float(x), float(y)] for x, y in waypoints],
+    }
+
+
 def _choose_paths(
     metadata: Path | None, source: Path | None, output: Path | None
 ) -> tuple[Path, Path, Path]:
@@ -78,12 +91,23 @@ def _save_result(
     video = output / "conditioning-edited.mp4"
     render_edited_sequence(edited, video, ffmpeg=ffmpeg)
     save_contact_sheet(edited, output / "conditioning-edited-contact-sheet.png")
+    trajectory_input = output / "trajectory-input.json"
+    trajectory_input.write_text(
+        json.dumps(
+            trajectory_input_payload(waypoints, mode=mode, epsilon=epsilon),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     metadata_output = output / "metadata.json"
     metadata_output.write_text(
         json.dumps(edited, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     manifest["edited_conditioning_path"] = str(video)
     manifest["edited_metadata_path"] = str(metadata_output)
+    manifest["trajectory_input_path"] = str(trajectory_input)
     manifest_output = output / "trajectory-edit-manifest.json"
     manifest_output.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
