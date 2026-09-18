@@ -53,12 +53,17 @@ aggregation:
   wan_is_diagnostic: true
   do_not_merge_mmor_and_4dor: true
 hands:
-  detector: mediapipe.solutions.hands
+  detector: mediapipe.tasks.vision.HandLandmarker
+  model_asset: hand_landmarker.task
+  no_silent_fallback: mediapipe.solutions.hands
   confidence: 0.5
   crop_margin: 0.2
   embedding: clip_vit_l14_336
+  no_detection_score: unavailable
 anatomy:
   vbench2_dimension: Human_Anatomy
+  vbench2_evaluator: evaluate.py
+  vbench2_mode: custom_input
   person_detector: facebook/detr-resnet-50
   mpjpe_if_unmatched: unavailable
 control_fidelity:
@@ -66,4 +71,11 @@ control_fidelity:
   forbid_psnr_ssim_against_ellipse_rgb: true
 motion:
   primary: fvmd
+  fvmd_python: required
+  fvmd_invocation: "python -m fvmd --log_dir GEN GT"
   ranking_only: jedi
+  jedi_python: optional_external
+  jedi_checkpoints:
+    encoder: vith16.pth.tar
+    probe: ssv2-probe.pth.tar
+    config: vith16_ssv2_16x2x3.yaml

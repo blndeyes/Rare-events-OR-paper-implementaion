@@ -2,31 +2,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
+from .external import ModelUnavailable
 from .protocol import (
     FROZEN_MODELS,
     HAND_CONFIDENCE,
+    HAND_DETECTOR,
     HAND_MARGIN,
+    HAND_MAX_HANDS,
     HAND_MIN_SIDE,
+    HAND_MODEL_ASSET,
     POSE_CONFIDENCE,
     clip_preprocess_numpy,
     dinov2_preprocess_numpy,
     expand_margin,
     spatial_average_pool_3x3,
 )
-
-
-class ModelUnavailable(RuntimeError):
-    def __init__(self, metric: str, reason: str) -> None:
-        self.metric = metric
-        self.reason = reason
-        super().__init__(f"{metric} unavailable: {reason}")
 
 
 @dataclass(frozen=True)
@@ -307,25 +304,127 @@ def predict_depth(frame: np.ndarray, loaded: tuple[Any, Any, Any]) -> np.ndarray
     return upsampled.squeeze().float().cpu().numpy()
 
 
-def detect_hands_mediapipe(frames: np.ndarray) -> dict[str, Any]:
+def select_hand_landmarker_api() -> dict[str, Any]:
+    """Return the explicit MediaPipe Tasks HandLandmarker API, or fail.
+
+    ``mediapipe.solutions.hands`` is never used, even when it is importable.
+    """
+
     try:
         import mediapipe as mp
     except ImportError as error:
         raise ModelUnavailable("hands", "mediapipe is not installed") from error
+    solutions_hands = getattr(getattr(mp, "solutions", None), "hands", None)
+    try:
+        from mediapipe.tasks import python as mp_tasks_python
+        from mediapipe.tasks.python import vision as mp_tasks_vision
+    except ImportError as error:
+        if solutions_hands is not None:
+            raise ModelUnavailable(
+                "hands",
+                "mediapipe.solutions.hands exists but is not the selected backend; "
+                "this evaluator requires mediapipe.tasks.vision.HandLandmarker and a "
+                f"{HAND_MODEL_ASSET} asset",
+            ) from error
+        raise ModelUnavailable(
+            "hands",
+            f"mediapipe.tasks.vision.HandLandmarker is unavailable ({error})",
+        ) from error
+    if getattr(mp_tasks_vision, "HandLandmarker", None) is None:
+        if solutions_hands is not None:
+            raise ModelUnavailable(
+                "hands",
+                "mediapipe.solutions.hands exists but is not the selected backend; "
+                "this evaluator requires mediapipe.tasks.vision.HandLandmarker",
+            )
+        raise ModelUnavailable("hands", "mediapipe.tasks.python.vision.HandLandmarker is missing")
+
+    def create(model_path: str) -> Any:
+        options_kwargs: dict[str, Any] = {
+            "base_options": mp_tasks_python.BaseOptions(model_asset_path=model_path),
+            "num_hands": HAND_MAX_HANDS,
+            "min_hand_detection_confidence": HAND_CONFIDENCE,
+        }
+        running_mode = getattr(mp_tasks_vision, "RunningMode", None)
+        if running_mode is not None:
+            options_kwargs["running_mode"] = running_mode.IMAGE
+        options = mp_tasks_vision.HandLandmarkerOptions(**options_kwargs)
+        return mp_tasks_vision.HandLandmarker.create_from_options(options)
+
+    return {
+        "create": create,
+        "Image": getattr(mp, "Image", None),
+        "ImageFormat": getattr(mp, "ImageFormat", None),
+        "version": getattr(mp, "__version__", None),
+        "detector": HAND_DETECTOR,
+        "package": "mediapipe",
+    }
+
+
+def _hand_image(frame: np.ndarray, api: dict[str, Any]) -> Any:
+    image_cls = api.get("Image")
+    image_format = api.get("ImageFormat")
+    pixels = np.ascontiguousarray(frame, dtype=np.uint8)
+    if image_cls is None or image_format is None:
+        raise ModelUnavailable(
+            "hands",
+            "mediapipe.Image / ImageFormat is unavailable; cannot run HandLandmarker",
+        )
+    srgb = getattr(image_format, "SRGB", None)
+    if srgb is None:
+        raise ModelUnavailable("hands", "mediapipe.ImageFormat.SRGB is unavailable")
+    return image_cls(image_format=srgb, data=pixels)
+
+
+def _hand_confidence(result: Any, hand_index: int) -> float:
+    handedness = getattr(result, "handedness", None)
+    if not handedness or hand_index >= len(handedness):
+        return HAND_CONFIDENCE
+    categories = handedness[hand_index]
+    if not categories:
+        return HAND_CONFIDENCE
+    first = categories[0]
+    score = getattr(first, "score", None)
+    return float(score) if score is not None else HAND_CONFIDENCE
+
+
+def detect_hands_mediapipe(
+    frames: np.ndarray,
+    *,
+    model_asset_path: Path | str | None,
+    landmarker_factory: Callable[[str], Any] | None = None,
+) -> dict[str, Any]:
+    """Detect hands with MediaPipe Tasks HandLandmarker only."""
+
+    if model_asset_path is None:
+        raise ModelUnavailable(
+            "hands",
+            "--hand-landmarker-model is required; refusing to download "
+            f"{HAND_MODEL_ASSET} at runtime",
+        )
+    asset = Path(model_asset_path)
+    if not asset.is_file():
+        raise ModelUnavailable("hands", f"HandLandmarker model asset missing: {asset}")
+    api = None if landmarker_factory is not None else select_hand_landmarker_api()
+    landmarker = (
+        landmarker_factory(str(asset))
+        if landmarker_factory is not None
+        else api["create"](str(asset))
+    )
     detections: list[dict[str, Any]] = []
     height, width = frames.shape[1:3]
-    with mp.solutions.hands.Hands(
-        static_image_mode=True,
-        max_num_hands=4,
-        min_detection_confidence=HAND_CONFIDENCE,
-    ) as hands:
+    close = getattr(landmarker, "close", None)
+    try:
         for frame_index, frame in enumerate(frames):
-            result = hands.process(np.asarray(frame))
-            if not result.multi_hand_landmarks:
-                continue
-            for hand in result.multi_hand_landmarks:
-                xs = [landmark.x * width for landmark in hand.landmark]
-                ys = [landmark.y * height for landmark in hand.landmark]
+            if landmarker_factory is not None:
+                result = landmarker.detect(np.asarray(frame))
+            else:
+                assert api is not None
+                result = landmarker.detect(_hand_image(frame, api))
+            hands = getattr(result, "hand_landmarks", None) or []
+            for hand_index, hand in enumerate(hands):
+                xs = [float(landmark.x) * width for landmark in hand]
+                ys = [float(landmark.y) * height for landmark in hand]
                 box = [
                     int(max(0, np.floor(min(xs)))),
                     int(max(0, np.floor(min(ys)))),
@@ -336,16 +435,24 @@ def detect_hands_mediapipe(frames: np.ndarray) -> dict[str, Any]:
                     {
                         "frame": int(frame_index),
                         "box_xyxy": box,
-                        "confidence": HAND_CONFIDENCE,
+                        "confidence": _hand_confidence(result, hand_index),
                     }
                 )
+    finally:
+        if callable(close):
+            close()
+    version = None if api is None else api.get("version")
     return {
-        "detector": "mediapipe.solutions.hands",
+        "detector": HAND_DETECTOR,
+        "detector_version": version,
+        "model_asset": str(asset),
         "confidence_threshold": HAND_CONFIDENCE,
         "crop_margin": HAND_MARGIN,
+        "max_hands": HAND_MAX_HANDS,
         "detections": detections,
         "frames_with_hands": len({row["frame"] for row in detections}),
         "frame_count": int(len(frames)),
+        "failed_frame_count": int(len(frames) - len({row["frame"] for row in detections})),
     }
 
 
@@ -477,113 +584,4 @@ def estimate_vitpose_keypoints(
         "revision": _record_revision(model),
         "dataset_index": 0,
         "detections": enriched,
-    }
-
-
-def run_vbench_anatomy(videos: Sequence[Path], *, vbench_root: Path, python: str = "python") -> dict[str, Any]:
-    if vbench_root is None:
-        raise ModelUnavailable("vbench2_anatomy", "--vbench-root was not provided")
-    script = vbench_root / "evaluate.py"
-    if not script.is_file():
-        raise ModelUnavailable("vbench2_anatomy", f"official evaluator missing: {script}")
-    import subprocess
-
-    scores = []
-    logs = []
-    for video in videos:
-        result = subprocess.run(
-            [
-                python,
-                str(script),
-                "--dimension",
-                "Human_Anatomy",
-                "--videos_path",
-                str(video),
-                "--mode",
-                "custom_input",
-            ],
-            cwd=vbench_root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        logs.append({"video": str(video), "returncode": result.returncode, "stdout": result.stdout[-2000:]})
-        if result.returncode != 0:
-            raise ModelUnavailable(
-                "vbench2_anatomy",
-                f"official VBench-2.0 evaluator failed for {video}: {result.stderr[-1000:]}",
-            )
-        scores.append({"video": str(video), "raw_output": result.stdout})
-    return {
-        "implementation": "Vchitect/VBench VBench-2.0 Human_Anatomy",
-        "per_video": scores,
-        "logs": logs,
-    }
-
-
-def run_fvmd(generated_dir: Path, reference_dir: Path, log_dir: Path) -> dict[str, Any]:
-    try:
-        from fvmd import fvmd
-    except ImportError as error:
-        raise ModelUnavailable("fvmd", "official fvmd package is not installed") from error
-    log_dir.mkdir(parents=True, exist_ok=True)
-    value = fvmd(log_dir=str(log_dir), gen_path=str(generated_dir), gt_path=str(reference_dir))
-    return {
-        "implementation": "DSL-Lab/FVMD-frechet-video-motion-distance",
-        "package": "fvmd",
-        "score": float(value),
-        "role": "primary_motion_distribution",
-        "official_sampling": FROZEN_MODELS["fvmd"]["official_sampling"],
-    }
-
-
-def run_jedi(
-    reference_videos: Sequence[Path],
-    generated_videos: Sequence[Path],
-    *,
-    feature_path: Path,
-    model_dir: Path | None = None,
-) -> dict[str, Any]:
-    try:
-        from torch.utils.data import DataLoader, Dataset
-        from videojedi import JEDiMetric
-    except ImportError as error:
-        raise ModelUnavailable("jedi", "official videojedi package is not installed") from error
-    torch = _torch_module()
-    from or_video_reproduction.evaluation.video import decode_rgb_video
-
-    if len(reference_videos) != len(generated_videos) or not reference_videos:
-        raise ModelUnavailable("jedi", "JEDi requires equally many real and generated videos")
-
-    class _JediVideos(Dataset):
-        def __init__(self, paths: Sequence[Path]) -> None:
-            self.paths = list(paths)
-
-        def __len__(self) -> int:
-            return len(self.paths)
-
-        def __getitem__(self, index: int):
-            frames = decode_rgb_video(self.paths[index])
-            return torch.from_numpy(frames_to_jedi_video_tensor(frames))
-
-    feature_path.mkdir(parents=True, exist_ok=True)
-    metric = JEDiMetric(
-        feature_path=str(feature_path),
-        model_dir=str(model_dir) if model_dir is not None else None,
-    )
-    count = len(reference_videos)
-    metric.load_features(
-        train_loader=DataLoader(_JediVideos(reference_videos), batch_size=1, shuffle=False),
-        test_loader=DataLoader(_JediVideos(generated_videos), batch_size=1, shuffle=False),
-        num_samples=count,
-    )
-    score = float(metric.compute_metric())
-    return {
-        "implementation": "oooolga/JEDi",
-        "package": "videojedi",
-        "score": score,
-        "n_videos": count,
-        "feature": "official V-JEPA via videojedi.JEDiMetric.load_features",
-        "role": "relative_ranking_only",
-        "warning": "JEDi is not an absolute calibrated quality score",
     }

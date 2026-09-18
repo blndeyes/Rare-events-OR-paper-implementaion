@@ -15,7 +15,7 @@ import traceback
 
 import numpy as np
 
-from or_video_reproduction.evaluation.video import decode_sampled_frames
+from or_video_reproduction.evaluation.video import decode_rgb_video, decode_sampled_frames
 
 from .backends import (
     ModelUnavailable,
@@ -31,13 +31,21 @@ from .backends import (
     load_dinov2,
     load_dinov3,
     predict_depth,
-    run_fvmd,
-    run_jedi,
-    run_vbench_anatomy,
 )
 from .cache import ArtifactCache
 from .control import compare_tracks, parse_ellipse_video, track_instances, detections_to_frame_instances
+from .external import OfficialTooling
 from .inventory import build_evaluation_manifest, save_evaluation_manifest
+from .official import (
+    inspect_fvmd_python,
+    inspect_jedi,
+    inspect_vbench_root,
+    run_fvmd,
+    run_jedi,
+    run_vbench_anatomy,
+    write_fvmd_frame_folders,
+    write_fvmd_npy,
+)
 from .protocol import (
     CORESET_SIZE,
     DEFAULT_SAMPLE_COUNT,
@@ -59,7 +67,7 @@ from .protocol import (
     write_json,
 )
 from or_video_reproduction.evaluation.distribution import frechet_distance
-from .scoring import detection_rate, match_people_by_iou, mpjpe_from_matches, nearest_anchor_scores
+from .scoring import detection_rate, match_people_by_iou, mpjpe_from_matches, nearest_anchor_scores, summarize_hands_metric
 
 ALL_METRICS = (
     "clip_cmmd",
@@ -75,7 +83,10 @@ ALL_METRICS = (
 
 
 def _maybe_import(name: str) -> bool:
-    return importlib.util.find_spec(name) is not None
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ModuleNotFoundError, ValueError):
+        return False
 
 
 def collect_environment(output_root: Path, *, hf_cache: Path | None, torch_cache: Path | None) -> dict[str, object]:
@@ -109,20 +120,32 @@ def _group_status(group: dict[str, object]) -> dict[str, object]:
     }
 
 
-def probe_model_availability(*, vbench_root: Path | None) -> dict[str, object]:
-    status = {}
+def probe_model_availability(*, tooling: OfficialTooling) -> dict[str, object]:
+    status: dict[str, object] = {}
     status["torch"] = {"available": _maybe_import("torch")}
     status["transformers"] = {"available": _maybe_import("transformers")}
-    status["mediapipe"] = {"available": _maybe_import("mediapipe")}
-    status["fvmd"] = {"available": _maybe_import("fvmd")}
-    status["videojedi"] = {"available": _maybe_import("videojedi")}
-    status["vbench2"] = {
-        "available": bool(vbench_root and (vbench_root / "evaluate.py").is_file()),
-        "root": str(vbench_root) if vbench_root else None,
+    mediapipe_present = _maybe_import("mediapipe")
+    tasks_present = _maybe_import("mediapipe.tasks.python.vision")
+    status["mediapipe"] = {
+        "available": mediapipe_present,
+        "tasks_hand_landmarker": tasks_present,
+        "selected_backend": "mediapipe.tasks.vision.HandLandmarker",
+        "model_asset": str(tooling.hand_landmarker_model) if tooling.hand_landmarker_model else None,
+        "model_asset_present": bool(
+            tooling.hand_landmarker_model and Path(tooling.hand_landmarker_model).is_file()
+        ),
     }
+    status["fvmd"] = inspect_fvmd_python(tooling.fvmd_python)
+    status["videojedi"] = inspect_jedi(
+        python=tooling.jedi_python,
+        model_dir=tooling.jedi_model_dir,
+        config_path=tooling.jedi_config,
+    )
+    status["vbench2"] = inspect_vbench_root(tooling.vbench_root)
     for metric, spec in FROZEN_MODELS.items():
         status.setdefault(metric, {})
-        status[metric]["spec"] = spec
+        if isinstance(status[metric], dict):
+            status[metric]["spec"] = spec
     return status
 
 
@@ -134,11 +157,23 @@ def build_preflight(
     vbench_root: Path | None,
     hf_cache: Path | None,
     torch_cache: Path | None,
+    tooling: OfficialTooling | None = None,
 ) -> dict[str, object]:
     bytes_per_frame = VIDEO_CONTRACT["width"] * VIDEO_CONTRACT["height"] * 3
     sampled_videos = sum(int(group["sample_count"]) * 2 for group in manifest["groups"])
     sampled_bytes = sampled_videos * len(sampling["indices"]) * bytes_per_frame
-    availability = probe_model_availability(vbench_root=vbench_root)
+    resolved = tooling or OfficialTooling(vbench_root=vbench_root)
+    if resolved.vbench_root is None and vbench_root is not None:
+        resolved = OfficialTooling(
+            vbench_root=vbench_root,
+            vbench_python=resolved.vbench_python,
+            fvmd_python=resolved.fvmd_python,
+            jedi_python=resolved.jedi_python,
+            jedi_model_dir=resolved.jedi_model_dir,
+            jedi_config=resolved.jedi_config,
+            hand_landmarker_model=resolved.hand_landmarker_model,
+        )
+    availability = probe_model_availability(tooling=resolved)
     invalid = []
     for group in manifest["groups"]:
         info = _group_status(group)
@@ -151,14 +186,22 @@ def build_preflight(
         missing.append("torch")
     if not availability["transformers"]["available"]:
         missing.append("transformers (CLIP, DINOv2, DINOv3, Depth Anything V2, DETR)")
-    if not availability["mediapipe"]["available"]:
-        missing.append("mediapipe (hand detector)")
-    if not availability["fvmd"]["available"]:
-        missing.append("fvmd (official FVMD)")
-    if not availability["videojedi"]["available"]:
-        missing.append("videojedi (official JEDi); ranking metric only")
-    if not availability["vbench2"]["available"]:
-        missing.append("VBench-2.0 evaluate.py (pass --vbench-root)")
+    hands_info = availability["mediapipe"]
+    if not hands_info.get("available"):
+        missing.append("mediapipe (Tasks HandLandmarker)")
+    elif not hands_info.get("tasks_hand_landmarker"):
+        missing.append("mediapipe.tasks.vision.HandLandmarker")
+    elif not hands_info.get("model_asset_present"):
+        missing.append("--hand-landmarker-model (hand_landmarker.task)")
+    fvmd_info = availability["fvmd"]
+    if fvmd_info.get("status") == "blocked" or not fvmd_info.get("available", True):
+        missing.append(f"fvmd ({fvmd_info.get('reason') or 'official interpreter'})")
+    jedi_info = availability["videojedi"]
+    if jedi_info.get("status") == "blocked":
+        missing.append(f"videojedi ({jedi_info.get('reason')})")
+    vbench_info = availability["vbench2"]
+    if vbench_info.get("status") == "blocked" or not vbench_info.get("available", True):
+        missing.append(f"VBench-2.0 ({vbench_info.get('reason') or 'pass --vbench-root'})")
     return {
         "schema_version": SCHEMA_VERSION,
         "ok": bool(manifest.get("ok")),
@@ -181,6 +224,17 @@ def build_preflight(
         "models": FROZEN_MODELS,
         "availability": availability,
         "missing_dependencies": missing,
+        "tooling": {
+            "vbench_root": str(resolved.vbench_root) if resolved.vbench_root else None,
+            "vbench_python": resolved.vbench_python,
+            "fvmd_python": resolved.fvmd_python,
+            "jedi_python": resolved.jedi_python,
+            "jedi_model_dir": str(resolved.jedi_model_dir) if resolved.jedi_model_dir else None,
+            "jedi_config": str(resolved.jedi_config) if resolved.jedi_config else None,
+            "hand_landmarker_model": str(resolved.hand_landmarker_model)
+            if resolved.hand_landmarker_model
+            else None,
+        },
         "statistically_invalid_or_weak": invalid,
         "expected_storage": {
             "sampled_rgb_uncompressed_gb": sampled_bytes / (1024**3),
@@ -200,8 +254,12 @@ def _load_or_decode(cache: ArtifactCache, name: str, path: Path, indices: Sequen
     return frames
 
 
-def _unavailable(metric: str, reason: str) -> dict[str, object]:
-    return {"status": "unavailable", "metric": metric, "reason": reason}
+def _unavailable(metric: str, reason: str, *, status: str = "blocked") -> dict[str, object]:
+    return {"status": status, "metric": metric, "reason": reason}
+
+
+def _from_model_error(error: ModelUnavailable) -> dict[str, object]:
+    return _unavailable(error.metric, error.reason, status=getattr(error, "status", "blocked"))
 
 
 def _metric_from_embeddings(
@@ -288,6 +346,32 @@ def _dinov3_from_patches(reference: list[np.ndarray], generated: list[np.ndarray
     }
 
 
+def _prepare_fvmd_official_inputs(
+    output_root: Path, group_id: str, pairs: list[dict[str, object]]
+) -> tuple[Path, Path]:
+    """Materialize official FVMD inputs: npy [N,T,H,W,C] or per-clip PNG folders."""
+
+    root = output_root / "scratch" / "fvmd-inputs" / group_id
+    generated = [decode_rgb_video(Path(pair["generated_video"])) for pair in pairs]
+    reference = [decode_rgb_video(Path(pair["reference_video"])) for pair in pairs]
+    try:
+        return (
+            write_fvmd_npy(root / "generated.npy", generated),
+            write_fvmd_npy(root / "reference.npy", reference),
+        )
+    except ValueError:
+        return (
+            write_fvmd_frame_folders(
+                root / "generated",
+                [(str(pair["id"]), frames) for pair, frames in zip(pairs, generated, strict=True)],
+            ),
+            write_fvmd_frame_folders(
+                root / "reference",
+                [(str(pair["id"]), frames) for pair, frames in zip(pairs, reference, strict=True)],
+            ),
+        )
+
+
 def _symlink_eval_set(output_root: Path, group_id: str, pairs: list[dict[str, object]]) -> tuple[Path, Path]:
     root = output_root / "scratch" / "motion" / group_id
     generated_dir = root / "generated"
@@ -317,8 +401,10 @@ def evaluate_group(
     hf_cache: str | None,
     vbench_root: Path | None,
     logger,
+    tooling: OfficialTooling | None = None,
 ) -> dict[str, object]:
     indices = list(sampling["indices"])
+    resolved = tooling or OfficialTooling(vbench_root=vbench_root)
     cache = ArtifactCache(
         output_root / "embeddings",
         namespace=str(group["id"]),
@@ -390,8 +476,8 @@ def evaluate_group(
                 "diagnostic_only": clip_scores["diagnostic_only"],
             }
         except ModelUnavailable as error:
-            result["metrics"]["clip_cmmd"] = _unavailable("clip_cmmd", error.reason)
-            result["metrics"]["clip_kid"] = _unavailable("clip_kid", error.reason)
+            result["metrics"]["clip_cmmd"] = _from_model_error(error)
+            result["metrics"]["clip_kid"] = _from_model_error(error)
             clip_ref = None
 
     if "dinov2" in metrics:
@@ -419,7 +505,7 @@ def evaluate_group(
                 scored["model"] = {"identifier": info.identifier, "revision": info.revision, **info.extra}
             result["metrics"]["dinov2"] = scored
         except ModelUnavailable as error:
-            result["metrics"]["dinov2"] = _unavailable("dinov2", error.reason)
+            result["metrics"]["dinov2"] = _from_model_error(error)
 
     if "dinov3" in metrics:
         try:
@@ -446,7 +532,7 @@ def evaluate_group(
                 scored["model"] = {"identifier": info.identifier, "revision": info.revision, **info.extra}
             result["metrics"]["dinov3"] = scored
         except ModelUnavailable as error:
-            result["metrics"]["dinov3"] = _unavailable("dinov3", error.reason)
+            result["metrics"]["dinov3"] = _from_model_error(error)
 
     if "hands" in metrics:
         try:
@@ -455,22 +541,38 @@ def evaluate_group(
             per_clip_hands = []
             empty_real = 0
             empty_gen = 0
+            real_failed_frames = 0
+            gen_failed_frames = 0
             clip_model = None
+            clip_info = None
+            detector_identity = FROZEN_MODELS["hands"]["detector"]
+            detector_version = None
+            model_asset = str(resolved.hand_landmarker_model) if resolved.hand_landmarker_model else None
             for row in clip_frames:
                 name = f"{row['id']}-hands"
                 if detection_cache.has_json(name):
                     payload = detection_cache.load_json(name)
                 else:
-                    real_det = detect_hands_mediapipe(row["reference"])
-                    gen_det = detect_hands_mediapipe(row["generated"])
+                    real_det = detect_hands_mediapipe(
+                        row["reference"], model_asset_path=resolved.hand_landmarker_model
+                    )
+                    gen_det = detect_hands_mediapipe(
+                        row["generated"], model_asset_path=resolved.hand_landmarker_model
+                    )
                     payload = {"real": real_det, "generated": gen_det}
                     detection_cache.save_json(name, payload)
+                detector_identity = payload["real"].get("detector", detector_identity)
+                detector_version = payload["real"].get("detector_version", detector_version)
+                model_asset = payload["real"].get("model_asset", model_asset)
                 real_rate = detection_rate(payload["real"]["detections"], len(indices))
                 gen_rate = detection_rate(payload["generated"]["detections"], len(indices))
+                real_failed_frames += int(real_rate["clips_or_frames_without_detection"])
+                gen_failed_frames += int(gen_rate["clips_or_frames_without_detection"])
                 if real_rate["detection_count"] == 0:
                     empty_real += 1
                 if gen_rate["detection_count"] == 0:
                     empty_gen += 1
+
                 def _crops(frames, detections):
                     crops = []
                     for det in detections:
@@ -478,6 +580,7 @@ def evaluate_group(
                         if crop is not None:
                             crops.append(crop)
                     return crops
+
                 real_c = _crops(row["reference"], payload["real"]["detections"])
                 gen_c = _crops(row["generated"], payload["generated"]["detections"])
                 per_clip_hands.append(
@@ -487,55 +590,83 @@ def evaluate_group(
                         "generated": gen_rate,
                         "real_valid_crops": len(real_c),
                         "generated_valid_crops": len(gen_c),
+                        "real_failed_frames": real_rate["clips_or_frames_without_detection"],
+                        "generated_failed_frames": gen_rate["clips_or_frames_without_detection"],
                     }
                 )
                 if real_c or gen_c:
                     if clip_model is None:
-                        clip_model, _ = load_clip(device, hf_cache)
+                        clip_model, clip_info = load_clip(device, hf_cache)
                     for crop in real_c:
                         real_crops.append(embed_clip_frames(crop[None], clip_model)[0])
                     for crop in gen_c:
                         fake_crops.append(embed_clip_frames(crop[None], clip_model)[0])
             real_arr = np.stack(real_crops) if real_crops else np.zeros((0, 1))
             fake_arr = np.stack(fake_crops) if fake_crops else np.zeros((0, 1))
-            embed_scores = nearest_anchor_scores(fake_arr, real_arr) if real_crops and fake_crops else {
-                "status": "unavailable",
-                "reason": "missing real or generated hand crops",
-                "generated_crops": len(fake_crops),
-                "reference_crops": len(real_crops),
-            }
+            embed_scores = nearest_anchor_scores(fake_arr, real_arr)
             if embed_scores["status"] == "ok" and len(real_arr) > 1 and len(fake_arr) > 1:
                 n = min(len(real_arr), len(fake_arr))
                 embed_scores["clip_rbf_mmd_x1000"] = scaled_unbiased_rbf_mmd(real_arr[:n], fake_arr[:n])
-            result["metrics"]["hands"] = {
-                "status": "ok",
-                "detector": "mediapipe.solutions.hands",
-                "confidence_threshold": payload["real"]["confidence_threshold"],
-                "crop_margin": payload["real"]["crop_margin"],
-                "embedding_model": FROZEN_MODELS["clip"]["huggingface_id"],
-                "real_clips_with_no_hands": empty_real,
-                "generated_clips_with_no_hands": empty_gen,
-                "valid_real_crops": len(real_crops),
-                "valid_generated_crops": len(fake_crops),
-                "per_clip": per_clip_hands,
-                "embedding_scores": embed_scores,
-                "note": "Embedding scores are never reported without detection-failure counts",
-            }
+            result["metrics"]["hands"] = summarize_hands_metric(
+                detector_identity=str(detector_identity),
+                detector_version=None if detector_version is None else str(detector_version),
+                model_asset=model_asset,
+                embedding_identity=FROZEN_MODELS["clip"]["huggingface_id"],
+                embedding_version=None if clip_info is None else clip_info.revision,
+                real_rate={
+                    "clips_with_no_hands": empty_real,
+                    "failed_frames": real_failed_frames,
+                    "detection_count": int(
+                        sum(int(row["real"]["detection_count"]) for row in per_clip_hands)
+                    ),
+                    "frame_count": int(len(indices) * len(clip_frames)),
+                    "frame_detection_rate": (
+                        1.0 - (real_failed_frames / (len(indices) * len(clip_frames)))
+                        if clip_frames
+                        else 0.0
+                    ),
+                },
+                generated_rate={
+                    "clips_with_no_hands": empty_gen,
+                    "failed_frames": gen_failed_frames,
+                    "detection_count": int(
+                        sum(int(row["generated"]["detection_count"]) for row in per_clip_hands)
+                    ),
+                    "frame_count": int(len(indices) * len(clip_frames)),
+                    "frame_detection_rate": (
+                        1.0 - (gen_failed_frames / (len(indices) * len(clip_frames)))
+                        if clip_frames
+                        else 0.0
+                    ),
+                },
+                real_crop_count=len(real_crops),
+                generated_crop_count=len(fake_crops),
+                real_failed_frames=real_failed_frames,
+                generated_failed_frames=gen_failed_frames,
+                per_clip=per_clip_hands,
+                embedding_scores=embed_scores,
+                extra={
+                    "confidence_threshold": payload["real"]["confidence_threshold"],
+                    "crop_margin": payload["real"]["crop_margin"],
+                    "real_clips_with_no_hands": empty_real,
+                    "generated_clips_with_no_hands": empty_gen,
+                },
+            )
         except ModelUnavailable as error:
-            result["metrics"]["hands"] = _unavailable("hands", error.reason)
+            result["metrics"]["hands"] = _from_model_error(error)
 
     if "anatomy" in metrics:
         anatomy: dict[str, object] = {"status": "ok", "parts": {}}
         try:
-            if vbench_root is not None:
-                videos = [Path(pair["generated_video"]) for pair in pairs]
-                anatomy["parts"]["vbench2_human_anatomy"] = run_vbench_anatomy(videos, vbench_root=vbench_root)
-            else:
-                anatomy["parts"]["vbench2_human_anatomy"] = _unavailable(
-                    "vbench2_anatomy", "--vbench-root was not provided"
-                )
+            videos = [Path(pair["generated_video"]) for pair in pairs]
+            anatomy["parts"]["vbench2_human_anatomy"] = run_vbench_anatomy(
+                videos,
+                vbench_root=resolved.vbench_root,
+                python=resolved.vbench_python,
+                output_dir=output_root / "scratch" / "vbench2" / str(group["id"]),
+            )
         except ModelUnavailable as error:
-            anatomy["parts"]["vbench2_human_anatomy"] = _unavailable("vbench2_anatomy", error.reason)
+            anatomy["parts"]["vbench2_human_anatomy"] = _from_model_error(error)
         try:
             per_clip_people = []
             real_det_all = []
@@ -584,7 +715,7 @@ def evaluate_group(
                     height, width = row["generated"].shape[:2]
                     mpjpe = mpjpe_from_matches(matched, width=width, height=height)
                 except ModelUnavailable as pose_error:
-                    mpjpe = _unavailable("mpjpe", pose_error.reason)
+                    mpjpe = _from_model_error(pose_error)
                 per_clip_people[-1]["mpjpe"] = mpjpe
                 clip_mpjpe.append(mpjpe)
             anatomy["parts"]["person_detection"] = {
@@ -617,8 +748,8 @@ def evaluate_group(
                     "per_clip": per_clip_people,
                 }
         except ModelUnavailable as error:
-            anatomy["parts"]["person_detection"] = _unavailable("pose", error.reason)
-            anatomy["parts"]["mpjpe"] = _unavailable("mpjpe", error.reason)
+            anatomy["parts"]["person_detection"] = _from_model_error(error)
+            anatomy["parts"]["mpjpe"] = _from_model_error(error)
         result["metrics"]["anatomy"] = anatomy
 
     if "control" in metrics:
@@ -684,31 +815,41 @@ def evaluate_group(
                     ),
                 }
             except ModelUnavailable as error:
-                result["metrics"]["control"] = _unavailable("control", error.reason)
+                result["metrics"]["control"] = _from_model_error(error)
 
     if "fvmd" in metrics:
         try:
-            gen_dir, ref_dir = _symlink_eval_set(output_root, str(group["id"]), pairs)
-            result["metrics"]["fvmd"] = run_fvmd(gen_dir, ref_dir, output_root / "scratch" / "fvmd-logs" / str(group["id"]))
-            result["metrics"]["fvmd"]["diagnostic_only"] = group["comparison_class"] == "diagnostic_single_video"
+            gen_path, ref_path = _prepare_fvmd_official_inputs(output_root, str(group["id"]), pairs)
+            scored = run_fvmd(
+                gen_path,
+                ref_path,
+                output_root / "scratch" / "fvmd-logs" / str(group["id"]),
+                python=resolved.fvmd_python,
+            )
+            scored["diagnostic_only"] = group["comparison_class"] == "diagnostic_single_video"
+            result["metrics"]["fvmd"] = scored
         except ModelUnavailable as error:
-            result["metrics"]["fvmd"] = _unavailable("fvmd", error.reason)
+            result["metrics"]["fvmd"] = _from_model_error(error)
         except Exception as error:  # noqa: BLE001
-            result["metrics"]["fvmd"] = _unavailable("fvmd", f"official FVMD failed: {error}")
+            result["metrics"]["fvmd"] = _unavailable(
+                "fvmd", f"official FVMD failed: {error}", status="failed"
+            )
 
     if "jedi" in metrics:
         try:
-            result["metrics"]["jedi"] = run_jedi(
+            scored = run_jedi(
                 [Path(pair["reference_video"]) for pair in pairs],
                 [Path(pair["generated_video"]) for pair in pairs],
                 feature_path=output_root / "scratch" / "jedi" / str(group["id"]),
-                model_dir=Path(hf_cache) if hf_cache else None,
+                python=resolved.jedi_python,
+                model_dir=resolved.jedi_model_dir,
+                config_path=resolved.jedi_config,
             )
-            result["metrics"]["jedi"]["diagnostic_only"] = group["comparison_class"] == "diagnostic_single_video"
+            scored["diagnostic_only"] = group["comparison_class"] == "diagnostic_single_video"
+            result["metrics"]["jedi"] = scored
         except ModelUnavailable as error:
-            result["metrics"]["jedi"] = _unavailable("jedi", error.reason)
+            result["metrics"]["jedi"] = _from_model_error(error)
             result["metrics"]["jedi"]["role"] = "relative_ranking_only"
-            result["metrics"]["jedi"]["package_present"] = _maybe_import("videojedi")
 
     logger(f"finished group {group['id']}")
     return result
@@ -831,6 +972,7 @@ def flatten_metric_status(results: dict[str, dict[str, object]]) -> dict[str, ob
                     "status": record.get("status", "ok"),
                     "reason": record.get("reason"),
                     "diagnostic_only": record.get("diagnostic_only"),
+                    "role": record.get("role"),
                 }
             else:
                 status[key] = {"status": "ok"}
@@ -862,6 +1004,7 @@ def run_pipeline(
     vbench_root: Path | None,
     hf_cache: Path | None,
     torch_cache: Path | None,
+    tooling: OfficialTooling | None = None,
 ) -> dict[str, object]:
     output_root.mkdir(parents=True, exist_ok=True)
     (output_root / "visualizations").mkdir(exist_ok=True)
@@ -888,13 +1031,25 @@ def run_pipeline(
     write_json(output_root / "frame-sampling.json", sampling)
     environment = collect_environment(output_root, hf_cache=hf_cache, torch_cache=torch_cache)
     write_json(output_root / "environment-lock.json", environment)
+    resolved = tooling or OfficialTooling(vbench_root=vbench_root)
+    if resolved.vbench_root is None and vbench_root is not None:
+        resolved = OfficialTooling(
+            vbench_root=vbench_root,
+            vbench_python=resolved.vbench_python,
+            fvmd_python=resolved.fvmd_python,
+            jedi_python=resolved.jedi_python,
+            jedi_model_dir=resolved.jedi_model_dir,
+            jedi_config=resolved.jedi_config,
+            hand_landmarker_model=resolved.hand_landmarker_model,
+        )
     preflight = build_preflight(
         manifest,
         sampling,
         output_root=output_root,
-        vbench_root=vbench_root,
+        vbench_root=resolved.vbench_root,
         hf_cache=hf_cache,
         torch_cache=torch_cache,
+        tooling=resolved,
     )
     write_json(output_root / "preflight-report.json", preflight)
     logger(f"preflight ok={preflight['ok']} missing={preflight['missing_dependencies']}")
@@ -922,8 +1077,9 @@ def run_pipeline(
                 device=device,
                 metrics=metrics,
                 hf_cache=str(hf_cache) if hf_cache else None,
-                vbench_root=vbench_root,
+                vbench_root=resolved.vbench_root,
                 logger=logger,
+                tooling=resolved,
             )
         except Exception as error:  # noqa: BLE001
             logger(traceback.format_exc())
@@ -975,6 +1131,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--metrics", default=",".join(ALL_METRICS))
     parser.add_argument("--vbench-root", type=Path)
+    parser.add_argument("--vbench-python", type=str)
+    parser.add_argument("--fvmd-python", type=str, help="Interpreter that can import official fvmd==1.0.0")
+    parser.add_argument("--jedi-python", type=str, help="Interpreter that can import official videojedi")
+    parser.add_argument("--jedi-model-dir", type=Path, help="Directory with vith16.pth.tar and ssv2-probe.pth.tar")
+    parser.add_argument("--jedi-config", type=Path, help="Official V-JEPA YAML, e.g. vith16_ssv2_16x2x3.yaml")
+    parser.add_argument(
+        "--hand-landmarker-model",
+        type=Path,
+        help="Path to MediaPipe Tasks hand_landmarker.task; not downloaded at runtime",
+    )
     parser.add_argument("--hf-cache", type=Path)
     parser.add_argument("--torch-cache", type=Path)
     return parser
@@ -986,6 +1152,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     unknown = metrics - set(ALL_METRICS)
     if unknown:
         raise ValueError(f"Unknown metrics: {sorted(unknown)}")
+    tooling = OfficialTooling(
+        vbench_root=args.vbench_root,
+        vbench_python=args.vbench_python,
+        fvmd_python=args.fvmd_python,
+        jedi_python=args.jedi_python,
+        jedi_model_dir=args.jedi_model_dir,
+        jedi_config=args.jedi_config,
+        hand_landmarker_model=args.hand_landmarker_model,
+    )
     run_pipeline(
         args.input_root,
         args.output_root,
@@ -995,6 +1170,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         vbench_root=args.vbench_root,
         hf_cache=args.hf_cache,
         torch_cache=args.torch_cache,
+        tooling=tooling,
     )
     return 0
 

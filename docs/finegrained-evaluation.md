@@ -38,15 +38,20 @@ uncertainty separately.
 - DINOv2 Large CLS: Frechet, density, coverage with \(k=5\).
 - DINOv3 Large patches: 3×3 average pool, greedy k-center coreset, RBF MMD.
   DINOv2 is never substituted.
-- Hands: MediaPipe detection rates plus CLIP crop embeddings. Failures are
-  counted; scores are not computed only on successful generated detections.
-- Anatomy: official VBench-2.0 `Human_Anatomy` if `--vbench-root` is provided;
-  DETR person detection rates; MPJPE only when same-frame IoU matching is
-  defensible. Undetected people do not receive zero MPJPE.
+- Hands: MediaPipe Tasks `HandLandmarker` (`hand_landmarker.task`) detection
+  rates plus CLIP crop embeddings. `mediapipe.solutions.hands` is never used.
+  Failures are counted; scores are not 0 or 1 when no hands are detected.
+  Pass `--hand-landmarker-model`.
+- Anatomy: official VBench-2.0 `evaluate.py` `Human_Anatomy` if `--vbench-root`
+  points at a VBench-2.0 checkout (optional `--vbench-python`); DETR person
+  detection rates; MPJPE only when same-frame IoU matching is defensible.
+  Undetected people do not receive zero MPJPE. VBench-1.0 is rejected.
 - Control fidelity: parse ellipse red/green/blue encoding, recover entities from
   generated RGB with an independent detector and Depth Anything V2 (not Video
   Depth Anything). No PSNR/SSIM against the black ellipse canvas.
-- Motion: official FVMD primary; official JEDi ranking-only.
+- Motion: official FVMD via `--fvmd-python -m fvmd` (primary); official JEDi
+  ranking-only via `--jedi-python`, `--jedi-model-dir` (`vith16.pth.tar`,
+  `ssv2-probe.pth.tar`), and `--jedi-config`. No FVD/CLIP/DINO/I3D substitute.
 
 ## Running
 
@@ -67,6 +72,13 @@ PYTHONPATH=src python -m or_video_reproduction.evaluation.finegrained.runner \
   --output-root /home/irtaza/or-metrics-results-20260918 \
   --stage run \
   --device cuda \
+  --hand-landmarker-model /path/to/hand_landmarker.task \
+  --fvmd-python /path/to/fvmd-venv/bin/python \
+  --jedi-python /path/to/jedi-venv/bin/python \
+  --jedi-model-dir /path/to/vjepa-checkpoints \
+  --jedi-config /path/to/vith16_ssv2_16x2x3.yaml \
+  --vbench-root /path/to/VBench/VBench-2.0 \
+  --vbench-python /path/to/vbench-venv/bin/python \
   --hf-cache /home/irtaza/.cache/huggingface \
   --torch-cache /home/irtaza/.cache/torch
 ```

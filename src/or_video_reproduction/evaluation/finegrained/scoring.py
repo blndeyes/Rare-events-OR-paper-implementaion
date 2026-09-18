@@ -36,6 +36,9 @@ def nearest_anchor_scores(
             "reason": "no valid crops on one or both sides",
             "generated_crops": int(len(generated)),
             "reference_crops": int(len(references)),
+            "mean_max_cosine": None,
+            "mean_cosine": None,
+            "score_policy": "no_detection_is_not_zero_or_one",
         }
     generated_norm = generated / np.maximum(np.linalg.norm(generated, axis=1, keepdims=True), 1e-12)
     reference_norm = references / np.maximum(np.linalg.norm(references, axis=1, keepdims=True), 1e-12)
@@ -47,6 +50,54 @@ def nearest_anchor_scores(
         "mean_max_cosine": float(cosine.max(axis=1).mean()),
         "mean_cosine": float(cosine.mean()),
     }
+
+
+def summarize_hands_metric(
+    *,
+    detector_identity: str,
+    detector_version: str | None,
+    model_asset: str | None,
+    embedding_identity: str,
+    embedding_version: str | None,
+    real_rate: Mapping[str, object],
+    generated_rate: Mapping[str, object],
+    real_crop_count: int,
+    generated_crop_count: int,
+    real_failed_frames: int,
+    generated_failed_frames: int,
+    per_clip: Sequence[Mapping[str, object]],
+    embedding_scores: Mapping[str, object],
+    extra: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Assemble a hands result. Missing crops never become score 0 or 1."""
+
+    payload: dict[str, object] = {
+        "status": "ok",
+        "detector": detector_identity,
+        "detector_version": detector_version,
+        "model_asset": model_asset,
+        "embedding_model": embedding_identity,
+        "embedding_version": embedding_version,
+        "real": real_rate,
+        "generated": generated_rate,
+        "valid_real_crops": int(real_crop_count),
+        "valid_generated_crops": int(generated_crop_count),
+        "real_failed_frames": int(real_failed_frames),
+        "generated_failed_frames": int(generated_failed_frames),
+        "per_clip": list(per_clip),
+        "embedding_scores": dict(embedding_scores),
+        "note": "Embedding scores are never reported without detection-failure counts",
+        "no_detection_score": "unavailable; never 0 or 1",
+    }
+    if extra:
+        payload.update(dict(extra))
+    if embedding_scores.get("status") != "ok":
+        payload["score"] = None
+        payload["score_status"] = embedding_scores.get("status", "unavailable")
+    else:
+        payload["score"] = embedding_scores.get("mean_max_cosine")
+        payload["score_status"] = "ok"
+    return payload
 
 
 def match_people_by_iou(

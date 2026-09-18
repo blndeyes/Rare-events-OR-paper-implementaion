@@ -39,6 +39,16 @@ CORESET_SIZE = 2048
 HAND_MARGIN = 0.20
 HAND_MIN_SIDE = 16
 HAND_CONFIDENCE = 0.50
+HAND_MAX_HANDS = 4
+HAND_DETECTOR = "mediapipe.tasks.vision.HandLandmarker"
+HAND_MODEL_ASSET = "hand_landmarker.task"
+HAND_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
+    "hand_landmarker/float16/1/hand_landmarker.task"
+)
+JEDI_ENCODER_CHECKPOINT = "vith16.pth.tar"
+JEDI_PROBE_CHECKPOINT = "ssv2-probe.pth.tar"
+JEDI_DEFAULT_CONFIG_NAME = "vith16_ssv2_16x2x3.yaml"
 POSE_CONFIDENCE = 0.50
 PERSON_MATCH_IOU = 0.30
 IDENTITY_SWITCH_DISTANCE = 80.0
@@ -84,10 +94,15 @@ FROZEN_MODELS = {
         "reason": "independent of Video Depth Anything used to author the ellipse controls",
     },
     "hands": {
-        "detector": "mediapipe.solutions.hands Hands",
+        "detector": HAND_DETECTOR,
+        "model_asset": HAND_MODEL_ASSET,
+        "official_asset_url": HAND_MODEL_URL,
+        "no_silent_fallback": "mediapipe.solutions.hands is never substituted",
         "confidence": HAND_CONFIDENCE,
+        "max_hands": HAND_MAX_HANDS,
         "crop_margin": HAND_MARGIN,
         "embedding": "CLIP ViT-L/14@336, same preprocessing as CMMD",
+        "no_detection_score": "unavailable; never 0 or 1",
     },
     "pose": {
         "person_detector": "facebook/detr-resnet-50 COCO person class",
@@ -97,18 +112,30 @@ FROZEN_MODELS = {
     "vbench2": {
         "implementation": "Vchitect/VBench VBench-2.0 Human_Anatomy",
         "dimension": "Human_Anatomy",
+        "evaluator": "evaluate.py from a VBench-2.0 checkout",
+        "mode": "custom_input",
+        "no_vendor": "VBench-1.0 evaluate.py is rejected",
     },
     "fvmd": {
         "implementation": "DSL-Lab/FVMD-frechet-video-motion-distance",
         "package": "fvmd==1.0.0",
         "role": "primary motion-distribution metric",
+        "invocation": "explicit --fvmd-python -m fvmd --log_dir GEN_PATH GT_PATH",
         "official_sampling": "16-frame segments, stride 1, 256x256, 400 PIPs++ points",
+        "input": "per-clip PNG folders or [N,T,H,W,C] npy; not mp4 symlinks",
+        "no_fallback": "FVD, optical flow, and in-process sklearn substitutes are forbidden",
     },
     "jedi": {
         "implementation": "oooolga/JEDi videojedi",
         "package": "videojedi==1.1.0",
         "role": "relative ranking only; not an absolute calibrated score",
-        "features": "V-JEPA video embeddings, official polynomial MMD",
+        "features": "official V-JEPA via videojedi.JEDiMetric.load_features",
+        "encoder_checkpoint": JEDI_ENCODER_CHECKPOINT,
+        "probe_checkpoint": JEDI_PROBE_CHECKPOINT,
+        "config": JEDI_DEFAULT_CONFIG_NAME,
+        "preprocessing": "TCHW RGB in [0,1], ImageNet mean/std inside VJEPA",
+        "aggregation": "finetuned attentive pooler; polynomial MMD degree=2 coef0=0 x100",
+        "no_silent_fallback": "CLIP, DINOv2, I3D, and other extractors are never substituted",
     },
 }
 
@@ -582,6 +609,13 @@ __all__ = [
     "DEFAULT_SAMPLE_COUNT",
     "DEFAULT_SEED",
     "FROZEN_MODELS",
+    "HAND_CONFIDENCE",
+    "HAND_DETECTOR",
+    "HAND_MAX_HANDS",
+    "HAND_MODEL_ASSET",
+    "JEDI_DEFAULT_CONFIG_NAME",
+    "JEDI_ENCODER_CHECKPOINT",
+    "JEDI_PROBE_CHECKPOINT",
     "MMD_SCALE",
     "PRDC_NEAREST_K",
     "SCHEMA_VERSION",
