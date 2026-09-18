@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from or_video_reproduction.evaluation.finegrained.inventory import build_evaluation_manifest
-from or_video_reproduction.evaluation.finegrained.runner import build_preflight
+from or_video_reproduction.evaluation.finegrained.runner import build_preflight, merge_group_results
 from or_video_reproduction.evaluation.finegrained.protocol import frame_sampling_manifest
 
 
@@ -159,6 +159,21 @@ class InventoryPairingTests(unittest.TestCase):
             self.assertTrue(any("diagnostic" in item.lower() for item in preflight["statistically_invalid_or_weak"]))
             self.assertTrue(any("rank-deficient" in item for item in preflight["statistically_invalid_or_weak"]))
             self.assertFalse(preflight["wan_in_frozen_4dor_split"])
+
+
+class ResultMergeTests(unittest.TestCase):
+    def test_later_stage_keeps_earlier_metrics(self) -> None:
+        previous = {
+            "group_id": "4dor_step600",
+            "metrics": {"clip_cmmd": {"status": "ok", "clip_cmmd_unbiased_rbf_x1000": 1.0}},
+        }
+        current = {
+            "group_id": "4dor_step600",
+            "metrics": {"dinov2": {"status": "ok", "frechet": 2.0}},
+        }
+        merged = merge_group_results(previous, current)
+        self.assertEqual(merged["metrics"]["clip_cmmd"]["clip_cmmd_unbiased_rbf_x1000"], 1.0)
+        self.assertEqual(merged["metrics"]["dinov2"]["frechet"], 2.0)
 
 
 if __name__ == "__main__":

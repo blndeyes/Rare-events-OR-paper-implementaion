@@ -837,6 +837,21 @@ def flatten_metric_status(results: dict[str, dict[str, object]]) -> dict[str, ob
     return status
 
 
+def merge_group_results(
+    previous: dict[str, object] | None, current: dict[str, object]
+) -> dict[str, object]:
+    """Keep metrics from earlier stages when this run requested a subset."""
+
+    if not previous:
+        return current
+    merged = dict(previous)
+    merged.update({key: value for key, value in current.items() if key != "metrics"})
+    previous_metrics = previous.get("metrics") if isinstance(previous.get("metrics"), dict) else {}
+    current_metrics = current.get("metrics") if isinstance(current.get("metrics"), dict) else {}
+    merged["metrics"] = {**previous_metrics, **current_metrics}
+    return merged
+
+
 def run_pipeline(
     input_root: Path,
     output_root: Path,
@@ -887,10 +902,20 @@ def run_pipeline(
         return {"preflight": preflight, "manifest": manifest}
 
     results: dict[str, dict[str, object]] = {}
+    previous_path = output_root / "per-clip-results.json"
+    previous_results: dict[str, object] = {}
+    if previous_path.is_file():
+        try:
+            loaded = json.loads(previous_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                previous_results = loaded
+        except json.JSONDecodeError:
+            previous_results = {}
     for group in manifest["groups"]:
         logger(f"evaluating {group['id']}")
+        group_id = str(group["id"])
         try:
-            results[str(group["id"])] = evaluate_group(
+            current = evaluate_group(
                 group,
                 sampling=sampling,
                 output_root=output_root,
@@ -902,7 +927,11 @@ def run_pipeline(
             )
         except Exception as error:  # noqa: BLE001
             logger(traceback.format_exc())
-            results[str(group["id"])] = {"status": "failed", "reason": str(error)}
+            current = {"status": "failed", "reason": str(error)}
+        previous = previous_results.get(group_id)
+        results[group_id] = merge_group_results(
+            previous if isinstance(previous, dict) else None, current
+        )
         write_json(output_root / "per-clip-results.json", results)
 
     metric_status = flatten_metric_status(results)
