@@ -14,14 +14,71 @@ COCO_LEFT_HIP = 11
 COCO_RIGHT_HIP = 12
 
 
-def detection_rate(detections: Sequence[Mapping[str, object]], frame_count: int) -> dict[str, object]:
-    frames = {int(row["frame"]) for row in detections}
+def detection_rate(
+    detections: Sequence[Mapping[str, object]],
+    frame_count: int,
+    *,
+    clip_id: str | None = None,
+) -> dict[str, object]:
+    """Count frames with at least one detection.
+
+    Frame indices are clip-scoped. When ``clip_id`` is set, or a detection already
+    carries ``clip_id``, identical numeric indices from different videos stay distinct.
+    """
+
+    frames: set[object] = set()
+    for row in detections:
+        frame = int(row["frame"])
+        scoped = row.get("clip_id", clip_id)
+        frames.add((str(scoped), frame) if scoped is not None else frame)
     return {
         "frames_with_detection": len(frames),
         "frame_count": frame_count,
         "frame_detection_rate": (len(frames) / frame_count) if frame_count else 0.0,
         "detection_count": len(detections),
         "clips_or_frames_without_detection": frame_count - len(frames),
+    }
+
+
+def aggregate_clip_detection_rates(
+    per_clip: Sequence[Mapping[str, object]],
+    side: str,
+) -> dict[str, object]:
+    """Sum clip-scoped detected-frame indicators. Do not union raw frame indices."""
+
+    if not per_clip:
+        raise ValueError("Cannot aggregate detection rates from an empty per-clip list")
+    frames_with = 0
+    frame_count = 0
+    detection_count = 0
+    without = 0
+    required = ("frames_with_detection", "frame_count", "detection_count")
+    for row in per_clip:
+        rates = row.get(side)
+        if not isinstance(rates, Mapping):
+            raise ValueError(f"per-clip record {row.get('id')!r} is missing {side} detection rates")
+        missing = [key for key in required if key not in rates]
+        if missing:
+            raise ValueError(f"per-clip record {row.get('id')!r} {side} is missing {missing}")
+        detected = int(rates["frames_with_detection"])
+        total = int(rates["frame_count"])
+        count = int(rates["detection_count"])
+        if detected < 0 or total < 0 or count < 0 or detected > total:
+            raise ValueError(
+                f"per-clip record {row.get('id')!r} {side} has inconsistent detection counts"
+            )
+        frames_with += detected
+        frame_count += total
+        detection_count += count
+        without += int(rates.get("clips_or_frames_without_detection", total - detected))
+    return {
+        "frames_with_detection": frames_with,
+        "frame_count": frame_count,
+        "frame_detection_rate": (frames_with / frame_count) if frame_count else 0.0,
+        "detection_count": detection_count,
+        "clips_or_frames_without_detection": without,
+        "aggregation": "sum_of_clip_scoped_detected_frame_indicators",
+        "note": "Frame indices are clip-scoped; identical indices from different videos are not merged.",
     }
 
 

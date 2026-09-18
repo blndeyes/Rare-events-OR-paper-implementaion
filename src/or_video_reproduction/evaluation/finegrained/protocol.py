@@ -93,6 +93,16 @@ FROZEN_MODELS = {
         "huggingface_id": "depth-anything/Depth-Anything-V2-Large-hf",
         "reason": "independent of Video Depth Anything used to author the ellipse controls",
     },
+    "control": {
+        "recovery_scope": "person_only_plus_independent_depth",
+        "independent_detector": "facebook/detr-resnet-50 COCO person class",
+        "independent_depth": "depth-anything/Depth-Anything-V2-Large-hf",
+        "ellipse_taxonomy": "paper-36 entity classes from or_video_reproduction.data.semantics.ENTITY_CLASSES",
+        "documented_class_mapping": None,
+        "class_filtered_matching": "blocked until a source-backed COCO-person to paper-36 mapping exists",
+        "class_consistency": "unavailable when the detector cannot emit paper-36 labels; never 0 from person vs OR-role mismatch",
+        "geometry_and_depth": "only class-compatible matches; unsupported entities affect coverage, not zero fidelity scores",
+    },
     "hands": {
         "detector": HAND_DETECTOR,
         "model_asset": HAND_MODEL_ASSET,

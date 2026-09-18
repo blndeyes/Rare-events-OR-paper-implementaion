@@ -33,7 +33,13 @@ from .backends import (
     predict_depth,
 )
 from .cache import ArtifactCache
-from .control import compare_tracks, parse_ellipse_video, track_instances, detections_to_frame_instances
+from .control import (
+    compare_tracks,
+    detections_to_frame_instances,
+    parse_ellipse_video,
+    summarize_control_group,
+    track_instances,
+)
 from .external import OfficialTooling
 from .inventory import build_evaluation_manifest, save_evaluation_manifest
 from .official import (
@@ -67,7 +73,14 @@ from .protocol import (
     write_json,
 )
 from or_video_reproduction.evaluation.distribution import frechet_distance
-from .scoring import detection_rate, match_people_by_iou, mpjpe_from_matches, nearest_anchor_scores, summarize_hands_metric
+from .scoring import (
+    aggregate_clip_detection_rates,
+    detection_rate,
+    match_people_by_iou,
+    mpjpe_from_matches,
+    nearest_anchor_scores,
+    summarize_hands_metric,
+)
 
 ALL_METRICS = (
     "clip_cmmd",
@@ -669,8 +682,6 @@ def evaluate_group(
             anatomy["parts"]["vbench2_human_anatomy"] = _from_model_error(error)
         try:
             per_clip_people = []
-            real_det_all = []
-            gen_det_all = []
             clip_mpjpe: list[dict[str, object]] = []
             for row in clip_frames:
                 name = f"{row['id']}-people"
@@ -682,11 +693,13 @@ def evaluate_group(
                         "generated": detect_people_detr(row["generated"], device, hf_cache),
                     }
                     detection_cache.save_json(name, payload)
-                real_rate = detection_rate(payload["real"]["detections"], len(indices))
-                gen_rate = detection_rate(payload["generated"]["detections"], len(indices))
+                real_rate = detection_rate(
+                    payload["real"]["detections"], len(indices), clip_id=str(row["id"])
+                )
+                gen_rate = detection_rate(
+                    payload["generated"]["detections"], len(indices), clip_id=str(row["id"])
+                )
                 per_clip_people.append({"id": row["id"], "real": real_rate, "generated": gen_rate})
-                real_det_all.extend(payload["real"]["detections"])
-                gen_det_all.extend(payload["generated"]["detections"])
                 pose_name = f"{row['id']}-vitpose"
                 try:
                     if detection_cache.has_json(pose_name):
@@ -720,8 +733,8 @@ def evaluate_group(
                 clip_mpjpe.append(mpjpe)
             anatomy["parts"]["person_detection"] = {
                 "status": "ok",
-                "real": detection_rate(real_det_all, len(indices) * len(clip_frames)),
-                "generated": detection_rate(gen_det_all, len(indices) * len(clip_frames)),
+                "real": aggregate_clip_detection_rates(per_clip_people, "real"),
+                "generated": aggregate_clip_detection_rates(per_clip_people, "generated"),
                 "per_clip": per_clip_people,
                 "detector": "facebook/detr-resnet-50",
                 "confidence_threshold": 0.5,
@@ -796,23 +809,19 @@ def evaluate_group(
                         }
                         detection_cache.save_json(name, payload)
                     generated_tracks = detections_to_frame_instances(payload["generated_detections"])
-                    scored = compare_tracks(control_tracks, generated_tracks)
+                    scored = compare_tracks(
+                        control_tracks,
+                        generated_tracks,
+                        detector_label_space=("person",),
+                    )
                     scored["clip_id"] = row["id"]
                     scored["independent_depth_model"] = payload.get("depth_model")
-                    scored["generated_class_note"] = (
-                        "Independent RGB recovery currently uses COCO person boxes plus "
-                        "Depth Anything V2. Non-person ellipse classes remain unmatched "
-                        "rather than being forced into a correspondence."
-                    )
                     per_clip_control.append(scored)
+                control_summary = summarize_control_group(per_clip_control)
                 result["metrics"]["control"] = {
-                    "status": "ok",
+                    **control_summary,
                     "independent_depth_model": FROZEN_MODELS["depth"],
-                    "psnr_against_ellipse_rgb": "forbidden",
                     "per_clip": per_clip_control,
-                    "aggregate_entity_detection_rate": float(
-                        np.mean([row.get("entity_detection_rate") or 0.0 for row in per_clip_control])
-                    ),
                 }
             except ModelUnavailable as error:
                 result["metrics"]["control"] = _from_model_error(error)
@@ -880,8 +889,8 @@ def render_summary(payload: dict[str, object]) -> str:
     ]
     for group in payload["groups"]:
         lines.append(
-            f"- `{group['id']}` ({group['comparison_class']}): {group['sample_count']} clips; "
-            f"IDs: {', '.join(group['clip_ids'])}"
+            f"- `{group.get('id')}` ({group.get('comparison_class')}): {group.get('sample_count')} clips; "
+            f"IDs: {', '.join(group.get('clip_ids') or [])}"
         )
     lines.extend(["", "## 4. Detection rates", ""])
     for group_id, group in payload["results"].items():
@@ -1125,9 +1134,14 @@ def run_pipeline(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-root", type=Path, required=True)
+    parser.add_argument("--input-root", type=Path)
     parser.add_argument("--output-root", type=Path, required=True)
-    parser.add_argument("--stage", choices=("preflight", "run"), default="run")
+    parser.add_argument("--stage", choices=("preflight", "run", "reaggregate"), default="run")
+    parser.add_argument(
+        "--source-results",
+        type=Path,
+        help="Existing per-clip results directory for --stage reaggregate",
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--metrics", default=",".join(ALL_METRICS))
     parser.add_argument("--vbench-root", type=Path)
@@ -1148,6 +1162,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.stage == "reaggregate":
+        if args.source_results is None:
+            raise ValueError("--source-results is required for --stage reaggregate")
+        from .reaggregate import run_reaggregation
+
+        run_reaggregation(source_root=args.source_results, output_root=args.output_root)
+        return 0
+    if args.input_root is None:
+        raise ValueError("--input-root is required")
     metrics = {item.strip() for item in args.metrics.split(",") if item.strip()}
     unknown = metrics - set(ALL_METRICS)
     if unknown:

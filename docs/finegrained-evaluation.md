@@ -46,9 +46,18 @@ uncertainty separately.
   points at a VBench-2.0 checkout (optional `--vbench-python`); DETR person
   detection rates; MPJPE only when same-frame IoU matching is defensible.
   Undetected people do not receive zero MPJPE. VBench-1.0 is rejected.
-- Control fidelity: parse ellipse red/green/blue encoding, recover entities from
-  generated RGB with an independent detector and Depth Anything V2 (not Video
-  Depth Anything). No PSNR/SSIM against the black ellipse canvas.
+- Control fidelity: parse ellipse red/green/blue encoding. Independent recovery is
+  **person-only plus Depth Anything V2**, not complete control fidelity. DETR emits
+  COCO `person`; ellipse videos use paper-36 OR role/entity classes. There is no
+  documented mapping, so class-filtered matching stays blocked, class consistency
+  is `unavailable` (not 0 from person vs nurse/table mismatch), and geometry or
+  relative-depth scores are computed only for class-compatible matches. Unsupported
+  entities affect coverage, not zero-valued fidelity. No PSNR/SSIM against the
+  black ellipse canvas.
+- Group anatomy `frame_detection_rate` sums clip-scoped detected-frame indicators.
+  Identical sampled indices from different videos are not merged.
+- `--stage reaggregate` recomputes those summaries from saved per-clip results
+  without loading DETR, ViTPose, Depth Anything, CLIP, or DINO.
 - Motion: official FVMD via `--fvmd-python -m fvmd` (primary); official JEDi
   ranking-only via `--jedi-python`, `--jedi-model-dir` (`vith16.pth.tar`,
   `ssv2-probe.pth.tar`), and `--jedi-config`. No FVD/CLIP/DINO/I3D substitute.
@@ -81,6 +90,10 @@ PYTHONPATH=src python -m or_video_reproduction.evaluation.finegrained.runner \
   --vbench-python /path/to/vbench-venv/bin/python \
   --hf-cache /home/irtaza/.cache/huggingface \
   --torch-cache /home/irtaza/.cache/torch
+
+PYTHONPATH=src python -m or_video_reproduction.evaluation.finegrained.reaggregate \
+  --source-results /home/irtaza/or-metrics-results-20260918 \
+  --output-root /home/irtaza/or-metrics-results-20260918-reagg
 ```
 
 If an official implementation is missing, that metric is recorded as

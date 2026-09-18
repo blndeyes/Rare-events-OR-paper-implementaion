@@ -67,7 +67,12 @@ anatomy:
   person_detector: facebook/detr-resnet-50
   mpjpe_if_unmatched: unavailable
 control_fidelity:
+  recovery_scope: person_only_plus_independent_depth
+  independent_detector: facebook/detr-resnet-50
   independent_depth: depth-anything/Depth-Anything-V2-Large-hf
+  documented_class_mapping: null
+  class_filtered_matching: blocked
+  class_consistency: unavailable_without_paper36_labels
   forbid_psnr_ssim_against_ellipse_rgb: true
 motion:
   primary: fvmd
