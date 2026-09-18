@@ -25,6 +25,7 @@ from .backends import (
     embed_clip_frames,
     embed_dinov2_frames,
     embed_dinov3_patches,
+    estimate_vitpose_keypoints,
     load_clip,
     load_depth,
     load_dinov2,
@@ -539,6 +540,7 @@ def evaluate_group(
             per_clip_people = []
             real_det_all = []
             gen_det_all = []
+            clip_mpjpe: list[dict[str, object]] = []
             for row in clip_frames:
                 name = f"{row['id']}-people"
                 if detection_cache.has_json(name):
@@ -554,6 +556,37 @@ def evaluate_group(
                 per_clip_people.append({"id": row["id"], "real": real_rate, "generated": gen_rate})
                 real_det_all.extend(payload["real"]["detections"])
                 gen_det_all.extend(payload["generated"]["detections"])
+                pose_name = f"{row['id']}-vitpose"
+                try:
+                    if detection_cache.has_json(pose_name):
+                        posed = detection_cache.load_json(pose_name)
+                    elif payload["real"]["detections"] or payload["generated"]["detections"]:
+                        posed = {
+                            "real": estimate_vitpose_keypoints(
+                                row["reference"], payload["real"]["detections"], device, hf_cache
+                            ),
+                            "generated": estimate_vitpose_keypoints(
+                                row["generated"], payload["generated"]["detections"], device, hf_cache
+                            ),
+                        }
+                        detection_cache.save_json(pose_name, posed)
+                    else:
+                        posed = {
+                            "real": {"identifier": FROZEN_MODELS["pose"]["keypoints"], "detections": []},
+                            "generated": {
+                                "identifier": FROZEN_MODELS["pose"]["keypoints"],
+                                "detections": [],
+                            },
+                        }
+                    matched = match_people_by_iou(
+                        posed["real"]["detections"], posed["generated"]["detections"]
+                    )
+                    height, width = row["generated"].shape[:2]
+                    mpjpe = mpjpe_from_matches(matched, width=width, height=height)
+                except ModelUnavailable as pose_error:
+                    mpjpe = _unavailable("mpjpe", pose_error.reason)
+                per_clip_people[-1]["mpjpe"] = mpjpe
+                clip_mpjpe.append(mpjpe)
             anatomy["parts"]["person_detection"] = {
                 "status": "ok",
                 "real": detection_rate(real_det_all, len(indices) * len(clip_frames)),
@@ -562,14 +595,27 @@ def evaluate_group(
                 "detector": "facebook/detr-resnet-50",
                 "confidence_threshold": 0.5,
             }
-            anatomy["parts"]["mpjpe"] = {
-                "status": "unavailable",
-                "reason": (
-                    "Official ViTPose/RTMPose keypoints were not loaded; person boxes are "
-                    "reported without inventing keypoint correspondences or zero MPJPE"
-                ),
-                "zero_mpjpe_for_misses": False,
-            }
+            ok_mpjpe = [row for row in clip_mpjpe if row.get("status") == "ok"]
+            if ok_mpjpe:
+                anatomy["parts"]["mpjpe"] = {
+                    "status": "ok",
+                    "pose_model": FROZEN_MODELS["pose"]["keypoints"],
+                    "mean_mpjpe_pixels": float(np.mean([row["mpjpe_pixels"] for row in ok_mpjpe])),
+                    "mean_mpjpe_over_image_diagonal": float(
+                        np.mean([row["mpjpe_over_image_diagonal"] for row in ok_mpjpe])
+                    ),
+                    "clips_with_mpjpe": len(ok_mpjpe),
+                    "clips_without_mpjpe": len(clip_mpjpe) - len(ok_mpjpe),
+                    "zero_mpjpe_for_misses": False,
+                    "per_clip": per_clip_people,
+                }
+            else:
+                anatomy["parts"]["mpjpe"] = {
+                    "status": "unavailable",
+                    "reason": "no clip produced defensible matched ViTPose keypoints",
+                    "zero_mpjpe_for_misses": False,
+                    "per_clip": per_clip_people,
+                }
         except ModelUnavailable as error:
             anatomy["parts"]["person_detection"] = _unavailable("pose", error.reason)
             anatomy["parts"]["mpjpe"] = _unavailable("mpjpe", error.reason)
@@ -651,16 +697,18 @@ def evaluate_group(
             result["metrics"]["fvmd"] = _unavailable("fvmd", f"official FVMD failed: {error}")
 
     if "jedi" in metrics:
-        result["metrics"]["jedi"] = _unavailable(
-            "jedi",
-            "JEDi requires official V-JEPA video features from videojedi.load_features; "
-            "it is not computed from CLIP/DINOv2 substitutes. Install videojedi and V-JEPA "
-            "weights to enable relative ranking on this identical split.",
-        )
-        if _maybe_import("videojedi") and clip_ref is not None:
-            # Keep JEDi off CLIP on purpose. Record that the package exists.
-            result["metrics"]["jedi"]["package_present"] = True
+        try:
+            result["metrics"]["jedi"] = run_jedi(
+                [Path(pair["reference_video"]) for pair in pairs],
+                [Path(pair["generated_video"]) for pair in pairs],
+                feature_path=output_root / "scratch" / "jedi" / str(group["id"]),
+                model_dir=Path(hf_cache) if hf_cache else None,
+            )
+            result["metrics"]["jedi"]["diagnostic_only"] = group["comparison_class"] == "diagnostic_single_video"
+        except ModelUnavailable as error:
+            result["metrics"]["jedi"] = _unavailable("jedi", error.reason)
             result["metrics"]["jedi"]["role"] = "relative_ranking_only"
+            result["metrics"]["jedi"]["package_present"] = _maybe_import("videojedi")
 
     logger(f"finished group {group['id']}")
     return result

@@ -5,6 +5,10 @@ import numpy as np
 from or_video_reproduction.geometry.palette import PAPER_36_PALETTE
 from or_video_reproduction.geometry.render import RenderInstance, render_conditioning
 from or_video_reproduction.geometry.ellipse import Ellipse
+from or_video_reproduction.evaluation.finegrained.backends import (
+    frames_to_jedi_video_tensor,
+    xyxy_to_xywh,
+)
 from or_video_reproduction.evaluation.finegrained.control import (
     compare_tracks,
     parse_ellipse_frame,
@@ -125,6 +129,18 @@ class AnatomyAndHandScoringTests(unittest.TestCase):
         self.assertEqual(mpjpe["status"], "unavailable")
         self.assertNotIn("mpjpe_pixels", mpjpe)
         self.assertFalse(mpjpe.get("zero_mpjpe_for_misses", False))
+
+
+class JediAndPoseHelperTests(unittest.TestCase):
+    def test_xyxy_to_xywh(self) -> None:
+        self.assertEqual(xyxy_to_xywh([10, 20, 40, 80]), [10.0, 20.0, 30.0, 60.0])
+
+    def test_jedi_tensor_is_tchw_unit_interval(self) -> None:
+        frames = np.full((3, 8, 10, 3), 255, dtype=np.uint8)
+        video = frames_to_jedi_video_tensor(frames)
+        self.assertEqual(video.shape, (3, 3, 8, 10))
+        self.assertEqual(video.dtype, np.float32)
+        np.testing.assert_allclose(video, 1.0)
 
 
 if __name__ == "__main__":

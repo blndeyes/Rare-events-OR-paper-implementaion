@@ -357,6 +357,20 @@ def crop_detection(frame: np.ndarray, box: Sequence[int], *, margin: float = HAN
     return np.asarray(frame[y0:y1, x0:x1])
 
 
+def xyxy_to_xywh(box: Sequence[float]) -> list[float]:
+    x0, y0, x1, y1 = (float(value) for value in box)
+    return [x0, y0, max(0.0, x1 - x0), max(0.0, y1 - y0)]
+
+
+def frames_to_jedi_video_tensor(frames: np.ndarray) -> np.ndarray:
+    """Convert THWC uint8 RGB to JEDi's TCHW float32 in [0, 1]."""
+
+    video = np.asarray(frames)
+    if video.ndim != 4 or video.shape[-1] != 3:
+        raise ValueError("JEDi video must have shape [T,H,W,3]")
+    return np.transpose(video.astype(np.float32) / 255.0, (0, 3, 1, 2))
+
+
 def detect_people_detr(frames: np.ndarray, device: str, cache_dir: str | None = None) -> dict[str, Any]:
     try:
         from transformers import DetrImageProcessor, DetrForObjectDetection
@@ -398,6 +412,71 @@ def detect_people_detr(frames: np.ndarray, device: str, cache_dir: str | None = 
         "detections": detections,
         "frames_with_people": len({row["frame"] for row in detections}),
         "frame_count": int(len(frames)),
+    }
+
+
+def estimate_vitpose_keypoints(
+    frames: np.ndarray,
+    detections: Sequence[dict[str, Any]],
+    device: str,
+    cache_dir: str | None = None,
+) -> dict[str, Any]:
+    """Attach COCO keypoints to DETR person boxes with official ViTPose++."""
+
+    identifier = str(FROZEN_MODELS["pose"]["keypoints"])
+    try:
+        from transformers import AutoProcessor, VitPoseForPoseEstimation
+    except ImportError as error:
+        raise ModelUnavailable(
+            "mpjpe",
+            f"transformers.VitPoseForPoseEstimation is unavailable ({error})",
+        ) from error
+    torch = _torch_module()
+    try:
+        processor = AutoProcessor.from_pretrained(identifier, cache_dir=cache_dir)
+        model = VitPoseForPoseEstimation.from_pretrained(identifier, cache_dir=cache_dir).to(device).eval()
+    except Exception as error:  # noqa: BLE001
+        raise ModelUnavailable("mpjpe", f"could not load {identifier}: {error}") from error
+
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for detection in detections:
+        grouped.setdefault(int(detection["frame"]), []).append(dict(detection))
+    enriched: list[dict[str, Any]] = []
+    with torch.inference_mode():
+        for frame_index, rows in grouped.items():
+            image = np.asarray(frames[frame_index])
+            boxes = np.asarray([xyxy_to_xywh(row["box_xyxy"]) for row in rows], dtype=np.float32)
+            inputs = processor(images=image, boxes=[boxes], return_tensors="pt")
+            tensors = {
+                key: value.to(device) if hasattr(value, "to") else value for key, value in inputs.items()
+            }
+            dataset_index = torch.zeros(1, dtype=torch.int64, device=device)
+            try:
+                outputs = model(**tensors, dataset_index=dataset_index)
+            except TypeError:
+                outputs = model(**tensors)
+            poses = processor.post_process_pose_estimation(outputs, boxes=[boxes])[0]
+            if len(poses) != len(rows):
+                raise ModelUnavailable(
+                    "mpjpe",
+                    f"ViTPose returned {len(poses)} poses for {len(rows)} boxes; refusing invented matches",
+                )
+            for row, pose in zip(rows, poses, strict=True):
+                keypoints = pose["keypoints"]
+                scores = pose["scores"]
+                if hasattr(keypoints, "detach"):
+                    keypoints = keypoints.detach().cpu().numpy()
+                if hasattr(scores, "detach"):
+                    scores = scores.detach().cpu().numpy()
+                row["keypoints"] = np.asarray(keypoints, dtype=np.float64).tolist()
+                row["keypoint_scores"] = np.asarray(scores, dtype=np.float64).tolist()
+                row["pose_model"] = identifier
+                enriched.append(row)
+    return {
+        "identifier": identifier,
+        "revision": _record_revision(model),
+        "dataset_index": 0,
+        "detections": enriched,
     }
 
 
@@ -458,19 +537,53 @@ def run_fvmd(generated_dir: Path, reference_dir: Path, log_dir: Path) -> dict[st
     }
 
 
-def run_jedi(reference: np.ndarray, generated: np.ndarray) -> dict[str, Any]:
+def run_jedi(
+    reference_videos: Sequence[Path],
+    generated_videos: Sequence[Path],
+    *,
+    feature_path: Path,
+    model_dir: Path | None = None,
+) -> dict[str, Any]:
     try:
+        from torch.utils.data import DataLoader, Dataset
         from videojedi import JEDiMetric
     except ImportError as error:
         raise ModelUnavailable("jedi", "official videojedi package is not installed") from error
-    metric = JEDiMetric()
-    metric.train_features = np.asarray(reference)
-    metric.test_features = np.asarray(generated)
+    torch = _torch_module()
+    from or_video_reproduction.evaluation.video import decode_rgb_video
+
+    if len(reference_videos) != len(generated_videos) or not reference_videos:
+        raise ModelUnavailable("jedi", "JEDi requires equally many real and generated videos")
+
+    class _JediVideos(Dataset):
+        def __init__(self, paths: Sequence[Path]) -> None:
+            self.paths = list(paths)
+
+        def __len__(self) -> int:
+            return len(self.paths)
+
+        def __getitem__(self, index: int):
+            frames = decode_rgb_video(self.paths[index])
+            return torch.from_numpy(frames_to_jedi_video_tensor(frames))
+
+    feature_path.mkdir(parents=True, exist_ok=True)
+    metric = JEDiMetric(
+        feature_path=str(feature_path),
+        model_dir=str(model_dir) if model_dir is not None else None,
+    )
+    count = len(reference_videos)
+    metric.load_features(
+        train_loader=DataLoader(_JediVideos(reference_videos), batch_size=1, shuffle=False),
+        test_loader=DataLoader(_JediVideos(generated_videos), batch_size=1, shuffle=False),
+        num_samples=count,
+    )
     score = float(metric.compute_metric())
     return {
         "implementation": "oooolga/JEDi",
         "package": "videojedi",
         "score": score,
+        "n_videos": count,
+        "feature": "official V-JEPA via videojedi.JEDiMetric.load_features",
         "role": "relative_ranking_only",
         "warning": "JEDi is not an absolute calibrated quality score",
     }
