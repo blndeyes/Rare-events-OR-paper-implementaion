@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from collections.abc import Sequence
 from pathlib import Path
 import subprocess
 
@@ -51,6 +53,31 @@ def decode_rgb_video(path: Path, *, resize: tuple[int, int] | None = None) -> np
             f"Decoded frame count differs from probe for {path}: {len(frames)} != {metadata['frames']}"
         )
     return frames
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def decode_sampled_frames(path: Path, indices: Sequence[int]) -> np.ndarray:
+    """Decode a video with the shared RGB decoder and keep the selected indices."""
+
+    frames = decode_rgb_video(path)
+    selected = [int(index) for index in indices]
+    if not selected:
+        raise ValueError(f"No frame indices were requested for {path}")
+    if min(selected) < 0 or max(selected) >= len(frames):
+        raise ValueError(
+            f"Frame indices {selected} are out of range for {path} with {len(frames)} frames"
+        )
+    return frames[np.asarray(selected, dtype=np.int64)]
 
 
 def validate_pair(reference: Path, generated: Path) -> dict[str, int | float]:
