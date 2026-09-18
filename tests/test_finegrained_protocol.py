@@ -6,7 +6,11 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from or_video_reproduction.evaluation.finegrained.backends import unwrap_clip_features
+from or_video_reproduction.evaluation.finegrained.backends import (
+    ModelUnavailable,
+    coerce_clip_image_features,
+    unwrap_clip_features,
+)
 from or_video_reproduction.evaluation.finegrained.cache import ArtifactCache
 from or_video_reproduction.evaluation.finegrained.protocol import (
     DEFAULT_SAMPLE_COUNT,
@@ -164,6 +168,52 @@ class ClipOutputUnwrapTests(unittest.TestCase):
     def test_does_not_treat_pooled_hidden_states_as_clip_features(self) -> None:
         payload = SimpleNamespace(pooler_output=np.zeros((2, 8)), last_hidden_state=np.zeros((2, 5, 8)))
         self.assertIsNone(unwrap_clip_features(payload))
+
+
+class FakeProjection:
+    def __init__(self, in_features: int, out_features: int) -> None:
+        self.in_features = in_features
+        self.out_features = out_features
+        self.calls: list[object] = []
+
+    def __call__(self, value: np.ndarray) -> np.ndarray:
+        self.calls.append(value)
+        return np.full((len(value), self.out_features), 7.0)
+
+
+class ClipFeatureCoerceTests(unittest.TestCase):
+    def test_uses_already_projected_768d_pooler(self) -> None:
+        projection = FakeProjection(1024, 768)
+        pooler = np.ones((2, 768))
+        payload = SimpleNamespace(pooler_output=pooler, last_hidden_state=np.zeros((2, 5, 1024)))
+        model = SimpleNamespace(visual_projection=projection)
+        result = coerce_clip_image_features(model, payload)
+        np.testing.assert_array_equal(result, pooler)
+        self.assertEqual(projection.calls, [])
+
+    def test_projects_1024d_pooler(self) -> None:
+        projection = FakeProjection(1024, 768)
+        pooler = np.ones((2, 1024))
+        payload = SimpleNamespace(pooler_output=pooler, last_hidden_state=np.zeros((2, 5, 1024)))
+        model = SimpleNamespace(visual_projection=projection)
+        result = coerce_clip_image_features(model, payload)
+        np.testing.assert_array_equal(result, np.full((2, 768), 7.0))
+        self.assertEqual(len(projection.calls), 1)
+
+    def test_projects_cls_token_when_pooler_is_missing(self) -> None:
+        projection = FakeProjection(1024, 768)
+        hidden = np.concatenate([np.ones((2, 1, 1024)), np.zeros((2, 4, 1024))], axis=1)
+        payload = SimpleNamespace(last_hidden_state=hidden)
+        model = SimpleNamespace(visual_projection=projection)
+        result = coerce_clip_image_features(model, payload)
+        np.testing.assert_array_equal(result, np.full((2, 768), 7.0))
+
+    def test_rejects_incompatible_pooling_shapes(self) -> None:
+        projection = FakeProjection(1024, 768)
+        payload = SimpleNamespace(pooler_output=np.ones((2, 512)), last_hidden_state=np.ones((2, 5, 512)))
+        model = SimpleNamespace(visual_projection=projection)
+        with self.assertRaises(ModelUnavailable):
+            coerce_clip_image_features(model, payload)
 
 
 if __name__ == "__main__":

@@ -91,20 +91,55 @@ def unwrap_clip_features(value: Any) -> Any:
     return None
 
 
-def clip_image_feature_tensor(model: Any, pixel_values: Any) -> Any:
-    features = model.get_image_features(pixel_values=pixel_values)
-    unwrapped = unwrap_clip_features(features)
+def _clip_last_dim(value: Any) -> int | None:
+    shape = getattr(value, "shape", None)
+    if not shape:
+        return None
+    return int(shape[-1])
+
+
+def coerce_clip_image_features(model: Any, value: Any) -> Any:
+    """Map a CLIP ``get_image_features`` return value to the projected image embedding.
+
+    Transformers 5 may return ``BaseModelOutputWithPooling`` whose ``pooler_output``
+    is already the 768-d projected CLIP image feature. Applying ``visual_projection``
+    again is invalid (1024x768 against 768). Raw vision ``last_hidden_state`` is
+    never used as the CMMD embedding.
+    """
+
+    unwrapped = unwrap_clip_features(value)
     if unwrapped is not None:
         return unwrapped
-    pooler = getattr(features, "pooler_output", None)
     projection = getattr(model, "visual_projection", None)
-    if pooler is not None and projection is not None:
-        return projection(pooler)
+    pooler = getattr(value, "pooler_output", None)
+    hidden = getattr(value, "last_hidden_state", None)
+    in_features = getattr(projection, "in_features", None) if projection is not None else None
+    out_features = getattr(projection, "out_features", None) if projection is not None else None
+    pooler_dim = _clip_last_dim(pooler)
+    if pooler is not None:
+        if out_features is not None and pooler_dim == int(out_features):
+            return pooler
+        if in_features is not None and pooler_dim == int(in_features):
+            return projection(pooler)
+        if projection is None:
+            return pooler
+    if hidden is not None and projection is not None:
+        cls = hidden[:, 0]
+        cls_dim = _clip_last_dim(cls)
+        if in_features is not None and cls_dim == int(in_features):
+            return projection(cls)
+        if out_features is not None and cls_dim == int(out_features):
+            return cls
     raise ModelUnavailable(
         "clip_cmmd",
-        f"get_image_features returned {type(features).__name__} without image_embeds "
-        "or visual_projection(pooler_output); refusing a silent backbone substitute",
+        f"get_image_features returned {type(value).__name__} with pooler_dim={pooler_dim} "
+        f"projection=({in_features}->{out_features}); refusing a silent backbone substitute",
     )
+
+
+def clip_image_feature_tensor(model: Any, pixel_values: Any) -> Any:
+    features = model.get_image_features(pixel_values=pixel_values)
+    return coerce_clip_image_features(model, features)
 
 
 def embed_clip_frames(
