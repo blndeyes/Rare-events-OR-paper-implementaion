@@ -1,10 +1,13 @@
 import json
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
+from types import SimpleNamespace
 
 import numpy as np
 
+from or_video_reproduction.evaluation.finegrained.backends import unwrap_clip_features
+from or_video_reproduction.evaluation.finegrained.cache import ArtifactCache
 from or_video_reproduction.evaluation.finegrained.protocol import (
     DEFAULT_SAMPLE_COUNT,
     clip_preprocess_numpy,
@@ -22,7 +25,6 @@ from or_video_reproduction.evaluation.finegrained.protocol import (
     unbiased_mmd2,
     video_bootstrap,
 )
-from or_video_reproduction.evaluation.finegrained.cache import ArtifactCache
 
 
 class FrameSamplingTests(unittest.TestCase):
@@ -137,6 +139,31 @@ class CacheResumeTests(unittest.TestCase):
             loaded = first.load_array("demo")
             np.testing.assert_array_equal(loaded["x"], np.arange(6).reshape(2, 3))
             self.assertFalse(second.has_array("demo"))
+
+
+class ClipOutputUnwrapTests(unittest.TestCase):
+    def test_prefers_image_embeds_over_pooler_output(self) -> None:
+        payload = SimpleNamespace(
+            image_embeds=np.ones((2, 3)),
+            pooler_output=np.zeros((2, 8)),
+            last_hidden_state=np.zeros((2, 5, 8)),
+        )
+        np.testing.assert_array_equal(unwrap_clip_features(payload), np.ones((2, 3)))
+
+    def test_accepts_a_plain_tensor_like_object(self) -> None:
+        class TensorLike:
+            def float(self) -> "TensorLike":
+                return self
+
+            def cpu(self) -> "TensorLike":
+                return self
+
+        value = TensorLike()
+        self.assertIs(unwrap_clip_features(value), value)
+
+    def test_does_not_treat_pooled_hidden_states_as_clip_features(self) -> None:
+        payload = SimpleNamespace(pooler_output=np.zeros((2, 8)), last_hidden_state=np.zeros((2, 5, 8)))
+        self.assertIsNone(unwrap_clip_features(payload))
 
 
 if __name__ == "__main__":

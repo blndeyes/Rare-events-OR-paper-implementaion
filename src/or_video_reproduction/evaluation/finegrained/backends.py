@@ -71,6 +71,42 @@ def load_clip(device: str, cache_dir: str | None = None) -> tuple[Any, LoadedMod
     return (model, torch), info
 
 
+def unwrap_clip_features(value: Any) -> Any:
+    """Extract the CLIP image embedding from a tensor or transformers 5 ModelOutput.
+
+    Transformers 4 ``get_image_features`` returns a tensor. Transformers 5.14 on
+    irtazapc returned ``BaseModelOutputWithPooling``.  The CMMD embedding is the
+    projected image feature, not a raw vision ``last_hidden_state``.
+    """
+
+    if isinstance(value, (tuple, list)):
+        if not value:
+            raise ModelUnavailable("clip_cmmd", "CLIP get_image_features returned an empty tuple")
+        value = value[0]
+    image_embeds = getattr(value, "image_embeds", None)
+    if image_embeds is not None:
+        return image_embeds
+    if hasattr(value, "cpu") and hasattr(value, "float") and not hasattr(value, "last_hidden_state"):
+        return value
+    return None
+
+
+def clip_image_feature_tensor(model: Any, pixel_values: Any) -> Any:
+    features = model.get_image_features(pixel_values=pixel_values)
+    unwrapped = unwrap_clip_features(features)
+    if unwrapped is not None:
+        return unwrapped
+    pooler = getattr(features, "pooler_output", None)
+    projection = getattr(model, "visual_projection", None)
+    if pooler is not None and projection is not None:
+        return projection(pooler)
+    raise ModelUnavailable(
+        "clip_cmmd",
+        f"get_image_features returned {type(features).__name__} without image_embeds "
+        "or visual_projection(pooler_output); refusing a silent backbone substitute",
+    )
+
+
 def embed_clip_frames(
     frames: np.ndarray,
     loaded: tuple[Any, Any],
@@ -85,7 +121,7 @@ def embed_clip_frames(
     outputs: list[np.ndarray] = []
     with torch.inference_mode():
         for start in range(0, len(tensor), batch_size):
-            features = model.get_image_features(pixel_values=tensor[start : start + batch_size])
+            features = clip_image_feature_tensor(model, tensor[start : start + batch_size])
             outputs.append(features.float().cpu().numpy())
     return np.concatenate(outputs, axis=0)
 
