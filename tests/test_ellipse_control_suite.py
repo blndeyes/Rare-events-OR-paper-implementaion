@@ -199,6 +199,22 @@ class EllipseControlSuiteTests(unittest.TestCase):
         self.assertTrue(all(row["instance_id"] != "7:nurse" for row in candidates))
         self.assertFalse(ellipse_in_canvas(Ellipse(10.0, 10.0, 80.0, 40.0, 0.0, 4000)))
 
+    def test_crowded_in_canvas_human_remains_eligible(self) -> None:
+        metadata = human_sequence()
+        metadata["frames"][0]["instances"][1]["ellipse"].update(
+            {
+                "center_x": 210.0,
+                "center_y": 310.0,
+                "major_diameter": 80.0,
+                "minor_diameter": 40.0,
+            }
+        )
+        candidates = human_candidates(metadata)
+        self.assertIn("10:head_surgeon", [row["instance_id"] for row in candidates])
+        selected = select_human_ellipse(metadata, style="horizontal")
+        self.assertEqual(selected["instance_id"], "10:head_surgeon")
+        self.assertGreaterEqual(selected["trajectory"]["requested_displacement_pixels"], 80.0)
+
 
 if __name__ == "__main__":
     unittest.main()

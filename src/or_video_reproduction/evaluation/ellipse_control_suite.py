@@ -284,7 +284,6 @@ def validate_in_canvas_trajectory(
 
 def human_candidates(metadata: Mapping[str, object]) -> list[dict[str, object]]:
     frame0 = metadata["frames"][0]
-    others = [_ellipse_from_instance(row) for row in frame0["instances"]]
     rows = []
     for row in frame0["instances"]:
         class_name = str(row.get("class_name"))
@@ -297,18 +296,22 @@ def human_candidates(metadata: Mapping[str, object]) -> list[dict[str, object]]:
             continue
         if ellipse.source_pixels < 200:
             continue
-        rest = [item for item in others if item is not ellipse]
-        # Identity comparison on dataclasses is value-based; exclude by key instead.
         rest = [
             _ellipse_from_instance(other)
             for other in frame0["instances"]
             if other.get("key") != row.get("key")
         ]
-        free = max(
+        free_avoid = max(
             max_in_canvas_translation(ellipse, direction, rest, avoid_overlap=True)
             for direction in STYLE_DIRECTIONS.values()
         )
-        if free < MIN_MEANINGFUL_FREE_SPACE:
+        free_canvas = max(
+            max_in_canvas_translation(ellipse, direction, rest, avoid_overlap=False)
+            for direction in STYLE_DIRECTIONS.values()
+        )
+        # Overlap with unselected ellipses is avoided when possible, but a crowded
+        # in-canvas person remains eligible if the centroid can still move.
+        if free_canvas < MIN_MEANINGFUL_FREE_SPACE:
             continue
         rows.append(
             {
@@ -316,10 +319,18 @@ def human_candidates(metadata: Mapping[str, object]) -> list[dict[str, object]]:
                 "class_name": class_name,
                 "ellipse": ellipse,
                 "source_pixels": ellipse.source_pixels,
-                "free_space_pixels": free,
+                "free_space_pixels": free_canvas,
+                "overlap_free_space_pixels": free_avoid,
             }
         )
-    rows.sort(key=lambda item: (-item["free_space_pixels"], -item["source_pixels"], item["instance_id"]))
+    rows.sort(
+        key=lambda item: (
+            -item["overlap_free_space_pixels"],
+            -item["free_space_pixels"],
+            -item["source_pixels"],
+            item["instance_id"],
+        )
+    )
     return rows
 
 
