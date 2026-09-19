@@ -15,6 +15,9 @@ venv/
 !.env.example
 .ssh_known_hosts
 
+# Local notes (not part of the published tree)
+/docs/
+
 # Datasets, model files, caches, and experiment outputs
 /data/
 /datasets/
