@@ -25,6 +25,16 @@ evaluation = [
   "torch>=2.6,<3",
   "torchvision>=0.21,<1",
 ]
+finegrained = [
+  "torch>=2.6,<3",
+  "torchvision>=0.21,<1",
+  "transformers>=4.56,<5",
+  "huggingface-hub>=0.24,<1",
+]
+gui = [
+  "opencv-python>=4.10,<5",
+  "pygame>=2.6,<3",
+]
 
 [project.scripts]
 or-dataset-inventory = "or_video_reproduction.data.inventory:main"
@@ -46,8 +56,14 @@ or-smoke-ic-lora = "or_video_reproduction.training.ic_lora_smoke:main"
 or-run-ic-lora-one-step = "or_video_reproduction.training.one_step:main"
 or-run-reduced-training = "or_video_reproduction.training.reduced_run:main"
 or-evaluate-videos = "or_video_reproduction.evaluation.runner:main"
+or-evaluate-finegrained = "or_video_reproduction.evaluation.finegrained.runner:main"
 or-build-4dor-evaluation = "or_video_reproduction.evaluation.four_dor:main"
 or-run-corrected-inference = "or_video_reproduction.evaluation.corrected_inference:main"
+or-list-ellipse-instances = "or_video_reproduction.geometry.trajectory:list_main"
+or-edit-ellipse-trajectory = "or_video_reproduction.geometry.trajectory:main"
+or-edit-ellipse-trajectory-gui = "or_video_reproduction.geometry.trajectory_gui:main"
+or-evaluate-trajectory-control = "or_video_reproduction.evaluation.trajectory_control:main"
+or-run-trajectory-control-step600 = "or_video_reproduction.evaluation.trajectory_experiment:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
