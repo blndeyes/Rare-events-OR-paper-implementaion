@@ -5,17 +5,30 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 
-from or_video_reproduction.data.clips import OUTPUT_FRAME_COUNT, TARGET_HEIGHT, TARGET_WIDTH
+from or_video_reproduction.data.clips import (
+    OUTPUT_FPS,
+    OUTPUT_FRAME_COUNT,
+    TARGET_HEIGHT,
+    TARGET_WIDTH,
+)
 from or_video_reproduction.geometry.ellipse import Ellipse, rasterize_ellipse
+from or_video_reproduction.geometry.trajectory import axis_aligned_box, resolve_ffmpeg
 from or_video_reproduction.preprocessing.sam2_propagation import Sam2VideoRunner
 
 from .video import decode_rgb_video, probe_video
+
+EDITED_ONLY_SAM2_OBJECT_ID = 1
+ELLIPSE_PROXY_INTERPRETATION = (
+    "Ellipse IoU measures adherence to a spatial conditioning proxy; it is not a "
+    "measurement of anatomical silhouette accuracy."
+)
 
 
 def load_labels(path: Path) -> np.ndarray:
@@ -108,9 +121,12 @@ def ellipse_alignment(
     label: int,
     edited_metadata: Mapping[str, object],
     instance_id: str,
+    require_observations: bool = True,
 ) -> dict[str, object]:
     box_values: list[float] = []
     mask_values: list[float] = []
+    per_frame_box: list[float | None] = []
+    per_frame_mask: list[float | None] = []
     observations = 0
     for frame_index, (labels, frame) in enumerate(
         zip(generated_labels, edited_metadata["frames"], strict=True)
@@ -123,6 +139,8 @@ def ellipse_alignment(
         ellipse_mask = rasterize_ellipse(_ellipse_from_row(rows[0]), labels.shape)
         generated_mask = labels == label
         if not generated_mask.any():
+            per_frame_box.append(None)
+            per_frame_mask.append(None)
             continue
         observations += 1
         generated_y, generated_x = np.nonzero(generated_mask)
@@ -141,19 +159,36 @@ def ellipse_alignment(
         ]
         value = _box_iou(generated_box, ellipse_box)
         assert value is not None
-        box_values.append(value)
         union = np.count_nonzero(generated_mask | ellipse_mask)
-        mask_values.append(float(np.count_nonzero(generated_mask & ellipse_mask) / union))
+        mask_value = float(np.count_nonzero(generated_mask & ellipse_mask) / union)
+        box_values.append(value)
+        mask_values.append(mask_value)
+        per_frame_box.append(value)
+        per_frame_mask.append(mask_value)
     if not observations:
-        raise ValueError("Selected generated entity has no masks for alignment")
+        if require_observations:
+            raise ValueError("Selected generated entity has no masks for alignment")
+        return {
+            "bounding_box_iou_to_conditioning_ellipse": None,
+            "segmentation_iou_to_conditioning_ellipse": None,
+            "observed_frames": 0,
+            "unavailable_frames": [
+                index for index, value in enumerate(per_frame_mask) if value is None
+            ],
+            "per_frame_bounding_box_iou": per_frame_box,
+            "per_frame_segmentation_iou": per_frame_mask,
+            "interpretation": ELLIPSE_PROXY_INTERPRETATION,
+        }
     return {
         "bounding_box_iou_to_conditioning_ellipse": float(np.mean(box_values)),
         "segmentation_iou_to_conditioning_ellipse": float(np.mean(mask_values)),
         "observed_frames": observations,
-        "interpretation": (
-            "proxy alignment only: an ellipse is a spatial abstraction, not an expected exact "
-            "human segmentation silhouette"
-        ),
+        "unavailable_frames": [
+            index for index, value in enumerate(per_frame_mask) if value is None
+        ],
+        "per_frame_bounding_box_iou": per_frame_box,
+        "per_frame_segmentation_iou": per_frame_mask,
+        "interpretation": ELLIPSE_PROXY_INTERPRETATION,
     }
 
 
@@ -347,6 +382,231 @@ def evaluate_control(
     return result
 
 
+def _optional_mean(values: Sequence[float | None]) -> float | None:
+    finite = [float(value) for value in values if value is not None]
+    return None if not finite else float(np.mean(finite))
+
+
+def _optional_median(values: Sequence[float | None]) -> float | None:
+    finite = [float(value) for value in values if value is not None]
+    return None if not finite else float(np.median(finite))
+
+
+def evaluate_edited_only(
+    *,
+    edited_labels: np.ndarray,
+    edit_manifest: Mapping[str, object],
+    edited_metadata: Mapping[str, object],
+    sam2_object_id: int = EDITED_ONLY_SAM2_OBJECT_ID,
+) -> dict[str, object]:
+    """Score one generated video against one requested centroid trajectory.
+
+    Missing SAM2 frames remain unavailable. They are never converted to a zero
+    trajectory error or a zero IoU.
+    """
+
+    instance_id = str(edit_manifest["selected_instance_id"])
+    command = edit_manifest["edited_centroids"]
+    if len(command) != OUTPUT_FRAME_COUNT:
+        raise ValueError("Edit manifest centroid tracks must have exactly 97 points")
+    if len(edited_labels) != OUTPUT_FRAME_COUNT:
+        raise ValueError(f"Edited labels must have {OUTPUT_FRAME_COUNT} frames")
+    track = mask_track(edited_labels, sam2_object_id)
+    per_frame: list[dict[str, object]] = []
+    errors: list[float | None] = []
+    for index, (observed, requested) in enumerate(zip(track["centroids"], command, strict=True)):
+        available = observed is not None
+        error = (
+            None
+            if not available
+            else float(np.linalg.norm(np.asarray(observed) - np.asarray(requested)))
+        )
+        errors.append(error)
+        per_frame.append(
+            {
+                "frame_index": index,
+                "requested_centroid": [float(requested[0]), float(requested[1])],
+                "generated_centroid": None if observed is None else [float(observed[0]), float(observed[1])],
+                "generated_box_xyxy_exclusive": track["boxes_xyxy_exclusive"][index],
+                "track_available": available,
+                "trajectory_error_pixels": error,
+            }
+        )
+    alignment = ellipse_alignment(
+        edited_labels,
+        label=sam2_object_id,
+        edited_metadata=edited_metadata,
+        instance_id=instance_id,
+        require_observations=False,
+    )
+    for index, row in enumerate(per_frame):
+        row["segmentation_iou"] = alignment["per_frame_segmentation_iou"][index]
+        row["bounding_box_iou"] = alignment["per_frame_bounding_box_iou"][index]
+        if row["segmentation_iou"] is None:
+            row["segmentation_iou_status"] = "unavailable"
+        if row["trajectory_error_pixels"] is None:
+            row["trajectory_error_status"] = "unavailable"
+
+    first_requested = np.asarray(command[0], dtype=np.float64)
+    last_requested = np.asarray(command[-1], dtype=np.float64)
+    requested_vector = last_requested - first_requested
+    requested_displacement = float(np.linalg.norm(requested_vector))
+    first_observed = track["centroids"][0]
+    last_observed = track["centroids"][-1]
+    endpoint_available = first_observed is not None and last_observed is not None
+    generated_vector = (
+        None
+        if not endpoint_available
+        else (np.asarray(last_observed, dtype=np.float64) - np.asarray(first_observed, dtype=np.float64))
+    )
+    generated_displacement = (
+        None if generated_vector is None else float(np.linalg.norm(generated_vector))
+    )
+    last_error = errors[-1]
+    valid_count = sum(1 for value in errors if value is not None)
+    unavailable = list(track["missing_frames"])
+    return {
+        "schema_version": 1,
+        "kind": "edited_only_single_ellipse_trajectory_evaluation",
+        "selected_instance_id": instance_id,
+        "selected_class": edit_manifest.get("selected_class"),
+        "sam2_object_id": sam2_object_id,
+        "identity_switching": "n/a",
+        "identity_switching_reason": "only one object is tracked",
+        "valid_track_frames": valid_count,
+        "valid_track_rate": valid_count / OUTPUT_FRAME_COUNT,
+        "unavailable_lost_frames": len(unavailable),
+        "unavailable_frame_indices": unavailable,
+        "trajectory_error_pixels": {
+            "mean": _optional_mean(errors),
+            "median": _optional_median(errors),
+            "endpoint": last_error,
+            "observed_frames": valid_count,
+            "missing_frames": unavailable,
+            "zero_filled": False,
+        },
+        "movement": {
+            "requested_vector_pixels": requested_vector.tolist(),
+            "requested_displacement_pixels": requested_displacement,
+            "generated_vector_pixels": None if generated_vector is None else generated_vector.tolist(),
+            "generated_displacement_pixels": generated_displacement,
+            "generated_requested_displacement_ratio": (
+                None
+                if generated_displacement is None or requested_displacement == 0
+                else generated_displacement / requested_displacement
+            ),
+            "direction_cosine": (
+                None
+                if generated_vector is None
+                else _cosine(generated_vector, requested_vector)
+            ),
+            "endpoint_available": endpoint_available,
+        },
+        "ellipse_alignment": alignment,
+        "per_frame": per_frame,
+        "conventions": {
+            "primary_test": "SAM2 selected-entity centroid versus commanded edited centroid",
+            "missing_tracks": "unavailable, never coerced to zero error or zero IoU",
+            "ellipse_iou": ELLIPSE_PROXY_INTERPRETATION,
+        },
+    }
+
+
+def overlay_frame(
+    rgb: np.ndarray,
+    mask: np.ndarray,
+    *,
+    commanded: Sequence[float],
+    observed: Sequence[float] | None,
+) -> np.ndarray:
+    """Blend a binary mask and mark commanded versus tracked centroids."""
+
+    frame = np.array(rgb, copy=True)
+    if mask.any():
+        tint = frame[mask]
+        frame[mask] = (tint * 0.55 + np.array([0, 180, 0], dtype=np.float64) * 0.45).astype(
+            np.uint8
+        )
+    image = Image.fromarray(frame)
+    draw = ImageDraw.Draw(image)
+    cx, cy = float(commanded[0]), float(commanded[1])
+    draw.ellipse((cx - 7, cy - 7, cx + 7, cy + 7), outline="yellow", width=3)
+    if observed is None:
+        draw.line((cx - 10, cy - 10, cx + 10, cy + 10), fill="red", width=3)
+        draw.line((cx - 10, cy + 10, cx + 10, cy - 10), fill="red", width=3)
+    else:
+        ox, oy = float(observed[0]), float(observed[1])
+        draw.ellipse((ox - 7, oy - 7, ox + 7, oy + 7), outline="red", width=3)
+    return np.asarray(image, dtype=np.uint8)
+
+
+def write_overlay_video(
+    *,
+    generated_video: Path,
+    labels: np.ndarray,
+    edit_manifest: Mapping[str, object],
+    output: Path,
+    sam2_object_id: int = EDITED_ONLY_SAM2_OBJECT_ID,
+    ffmpeg: str | None = None,
+) -> None:
+    frames = decode_rgb_video(generated_video)
+    if len(frames) != OUTPUT_FRAME_COUNT:
+        raise ValueError(f"Generated video must have {OUTPUT_FRAME_COUNT} frames")
+    command = edit_manifest["edited_centroids"]
+    track = mask_track(labels, sam2_object_id)
+    ffmpeg = resolve_ffmpeg(ffmpeg)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(output.stem + ".tmp.mp4")
+    process = subprocess.Popen(
+        [
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pixel_format",
+            "rgb24",
+            "-video_size",
+            f"{TARGET_WIDTH}x{TARGET_HEIGHT}",
+            "-framerate",
+            str(OUTPUT_FPS),
+            "-i",
+            "-",
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-threads",
+            "1",
+            str(temporary),
+        ],
+        stdin=subprocess.PIPE,
+    )
+    assert process.stdin is not None
+    try:
+        for index, frame in enumerate(frames):
+            overlay = overlay_frame(
+                frame,
+                labels[index] == sam2_object_id,
+                commanded=command[index],
+                observed=track["centroids"][index],
+            )
+            process.stdin.write(overlay.tobytes(order="C"))
+        process.stdin.close()
+        if process.wait() != 0:
+            raise RuntimeError("ffmpeg failed while writing the SAM2 overlay video")
+    except BaseException:
+        process.kill()
+        raise
+    temporary.replace(output)
+
+
 def make_contact_sheet(
     *,
     original_conditioning: Path,
@@ -391,6 +651,81 @@ def make_contact_sheet(
                 draw.ellipse((px - 6, py - 6, px + 6, py + 6), outline="red", width=3)
     output.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(output)
+
+
+def make_edited_only_contact_sheet(
+    *,
+    original_conditioning: Path,
+    edited_conditioning: Path,
+    edited_generated: Path,
+    edit_manifest: Mapping[str, object],
+    edited_labels: np.ndarray,
+    output: Path,
+    sam2_object_id: int = EDITED_ONLY_SAM2_OBJECT_ID,
+) -> None:
+    videos = [
+        decode_rgb_video(original_conditioning),
+        decode_rgb_video(edited_conditioning),
+        decode_rgb_video(edited_generated),
+    ]
+    captions = ["original control", "edited control", "edited output"]
+    frame_indices = [0, 24, 48, 72, 96]
+    tile_size = (384, 288)
+    sheet = Image.new("RGB", (tile_size[0] * 4, tile_size[1] * len(frame_indices)), "black")
+    draw = ImageDraw.Draw(sheet)
+    command = edit_manifest["edited_centroids"]
+    track = mask_track(edited_labels, sam2_object_id)
+    scale_x, scale_y = tile_size[0] / TARGET_WIDTH, tile_size[1] / TARGET_HEIGHT
+    for row, frame_index in enumerate(frame_indices):
+        for column, frames in enumerate(videos):
+            image = Image.fromarray(frames[frame_index]).resize(tile_size, Image.Resampling.LANCZOS)
+            sheet.paste(image, (column * tile_size[0], row * tile_size[1]))
+            x0, y0 = column * tile_size[0], row * tile_size[1]
+            draw.rectangle((x0, y0, x0 + 170, y0 + 23), fill="black")
+            draw.text((x0 + 5, y0 + 4), f"{captions[column]}  f={frame_index}", fill="white")
+        overlay = overlay_frame(
+            videos[2][frame_index],
+            edited_labels[frame_index] == sam2_object_id,
+            commanded=command[frame_index],
+            observed=track["centroids"][frame_index],
+        )
+        overlay_image = Image.fromarray(overlay).resize(tile_size, Image.Resampling.LANCZOS)
+        sheet.paste(overlay_image, (3 * tile_size[0], row * tile_size[1]))
+        x0, y0 = 3 * tile_size[0], row * tile_size[1]
+        draw.rectangle((x0, y0, x0 + 170, y0 + 23), fill="black")
+        draw.text((x0 + 5, y0 + 4), f"SAM2 overlay  f={frame_index}", fill="white")
+        commanded = command[frame_index]
+        cx = 2 * tile_size[0] + commanded[0] * scale_x
+        cy = row * tile_size[1] + commanded[1] * scale_y
+        draw.ellipse((cx - 6, cy - 6, cx + 6, cy + 6), outline="yellow", width=3)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(output)
+
+
+def write_track_tables(
+    *,
+    track: Mapping[str, object],
+    output_dir: Path,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    centroids = {
+        "schema_version": 1,
+        "sam2_object_id": track["label"],
+        "centroids": track["centroids"],
+        "missing_frames": track["missing_frames"],
+    }
+    boxes = {
+        "schema_version": 1,
+        "sam2_object_id": track["label"],
+        "boxes_xyxy_exclusive": track["boxes_xyxy_exclusive"],
+        "missing_frames": track["missing_frames"],
+    }
+    (output_dir / "centroids.json").write_text(
+        json.dumps(centroids, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    (output_dir / "boxes.json").write_text(
+        json.dumps(boxes, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def run_gpu_evaluation(
@@ -459,11 +794,100 @@ def run_gpu_evaluation(
     return result
 
 
+def run_edited_only_gpu_evaluation(
+    *,
+    edited_generated: Path,
+    sam2_root: Path,
+    sam2_checkpoint: Path,
+    edit_manifest_path: Path,
+    edited_metadata_path: Path,
+    original_conditioning: Path,
+    edited_conditioning: Path,
+    output_dir: Path,
+    original_generated: Path | None = None,
+) -> dict[str, object]:
+    if original_generated is not None:
+        raise ValueError("Edited-only evaluation does not accept an original-generated companion")
+    expected = {"width": 1024, "height": 768, "frames": 97, "fps": 24.0}
+    for path in (edited_generated, original_conditioning, edited_conditioning):
+        if probe_video(path) != expected:
+            raise ValueError(f"Video violates trajectory-control contract: {path}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    sam2_dir = output_dir / "sam2"
+    sam2_dir.mkdir(exist_ok=True)
+    edit_manifest = json.loads(edit_manifest_path.read_text(encoding="utf-8"))
+    edited_metadata = json.loads(edited_metadata_path.read_text(encoding="utf-8"))
+    instance_id = str(edit_manifest["selected_instance_id"])
+    frame0 = next(
+        row
+        for row in edited_metadata["frames"][0]["instances"]
+        if row.get("key") == instance_id
+    )
+    ellipse = _ellipse_from_row(frame0)
+    runner = Sam2VideoRunner(sam2_root, sam2_checkpoint)
+    mask_path = sam2_dir / "labels.npz"
+    runner.run_ellipse(
+        edited_generated,
+        mask_path,
+        center_xy=[ellipse.center_x, ellipse.center_y],
+        box_xyxy=axis_aligned_box(ellipse),
+        object_id=EDITED_ONLY_SAM2_OBJECT_ID,
+        instance_id=instance_id,
+        class_name=str(edit_manifest.get("selected_class")),
+    )
+    edited_labels = load_labels(mask_path)
+    track = mask_track(edited_labels, EDITED_ONLY_SAM2_OBJECT_ID)
+    write_track_tables(track=track, output_dir=sam2_dir)
+    overlay_path = sam2_dir / "overlay.mp4"
+    write_overlay_video(
+        generated_video=edited_generated,
+        labels=edited_labels,
+        edit_manifest=edit_manifest,
+        output=overlay_path,
+    )
+    result = evaluate_edited_only(
+        edited_labels=edited_labels,
+        edit_manifest=edit_manifest,
+        edited_metadata=edited_metadata,
+    )
+    result["inputs"] = {
+        "original_generated": None,
+        "edited_generated": str(edited_generated),
+        "original_conditioning": str(original_conditioning),
+        "edited_conditioning": str(edited_conditioning),
+        "edit_manifest": str(edit_manifest_path),
+        "edited_metadata": str(edited_metadata_path),
+        "sam2_labels": str(mask_path),
+        "sam2_overlay": str(overlay_path),
+    }
+    metrics_dir = output_dir / "metrics"
+    metrics_dir.mkdir(exist_ok=True)
+    (metrics_dir / "per-frame.json").write_text(
+        json.dumps(result["per_frame"], indent=2) + "\n", encoding="utf-8"
+    )
+    (metrics_dir / "case.json").write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    make_edited_only_contact_sheet(
+        original_conditioning=original_conditioning,
+        edited_conditioning=edited_conditioning,
+        edited_generated=edited_generated,
+        edit_manifest=edit_manifest,
+        edited_labels=edited_labels,
+        output=output_dir / "contact-sheet.png",
+    )
+    (output_dir / "control-metrics.json").write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return result
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--original-generated", required=True, type=Path)
+    parser.add_argument("--original-generated", type=Path)
     parser.add_argument("--edited-generated", required=True, type=Path)
-    prompts = parser.add_mutually_exclusive_group(required=True)
+    parser.add_argument("--edited-only", action="store_true")
+    prompts = parser.add_mutually_exclusive_group(required=False)
     prompts.add_argument("--first-mask", type=Path)
     prompts.add_argument("--source-labels", type=Path)
     parser.add_argument("--sam2-root", required=True, type=Path)
@@ -477,20 +901,38 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    result = run_gpu_evaluation(
-        original_generated=args.original_generated,
-        edited_generated=args.edited_generated,
-        first_mask=args.first_mask,
-        source_labels=args.source_labels,
-        sam2_root=args.sam2_root,
-        sam2_checkpoint=args.sam2_checkpoint,
-        edit_manifest_path=args.edit_manifest,
-        edited_metadata_path=args.edited_metadata,
-        original_conditioning=args.original_conditioning,
-        edited_conditioning=args.edited_conditioning,
-        output_dir=args.output_dir,
-    )
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.edited_only:
+        result = run_edited_only_gpu_evaluation(
+            edited_generated=args.edited_generated,
+            sam2_root=args.sam2_root,
+            sam2_checkpoint=args.sam2_checkpoint,
+            edit_manifest_path=args.edit_manifest,
+            edited_metadata_path=args.edited_metadata,
+            original_conditioning=args.original_conditioning,
+            edited_conditioning=args.edited_conditioning,
+            output_dir=args.output_dir,
+            original_generated=args.original_generated,
+        )
+    else:
+        if args.original_generated is None:
+            parser.error("--original-generated is required unless --edited-only")
+        if (args.first_mask is None) == (args.source_labels is None):
+            parser.error("Choose exactly one of --first-mask or --source-labels")
+        result = run_gpu_evaluation(
+            original_generated=args.original_generated,
+            edited_generated=args.edited_generated,
+            first_mask=args.first_mask,
+            source_labels=args.source_labels,
+            sam2_root=args.sam2_root,
+            sam2_checkpoint=args.sam2_checkpoint,
+            edit_manifest_path=args.edit_manifest,
+            edited_metadata_path=args.edited_metadata,
+            original_conditioning=args.original_conditioning,
+            edited_conditioning=args.edited_conditioning,
+            output_dir=args.output_dir,
+        )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 

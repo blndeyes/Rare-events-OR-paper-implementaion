@@ -305,6 +305,38 @@ def _extent(ellipse: Ellipse) -> tuple[float, float]:
     )
 
 
+def axis_aligned_box(
+    ellipse: Ellipse, *, width: int = TARGET_WIDTH, height: int = TARGET_HEIGHT
+) -> list[float]:
+    """Return a clamped axis-aligned xyxy box covering the rotated ellipse."""
+
+    extent_x, extent_y = _extent(ellipse)
+    return [
+        max(0.0, ellipse.center_x - extent_x),
+        max(0.0, ellipse.center_y - extent_y),
+        min(float(width), ellipse.center_x + extent_x),
+        min(float(height), ellipse.center_y + extent_y),
+    ]
+
+
+def ellipse_in_canvas(
+    ellipse: Ellipse,
+    *,
+    width: int = TARGET_WIDTH,
+    height: int = TARGET_HEIGHT,
+    slack: float = 1e-6,
+) -> bool:
+    """True when the complete rotated ellipse stays inside the target canvas."""
+
+    extent_x, extent_y = _extent(ellipse)
+    return (
+        ellipse.center_x - extent_x >= -slack
+        and ellipse.center_y - extent_y >= -slack
+        and ellipse.center_x + extent_x <= width + slack
+        and ellipse.center_y + extent_y <= height + slack
+    )
+
+
 def clip_ellipse_to_frame(
     ellipse: Ellipse, *, width: int = TARGET_WIDTH, height: int = TARGET_HEIGHT
 ) -> tuple[Ellipse, dict[str, object] | None]:

@@ -181,6 +181,29 @@ class Sam2VideoRunner:
         )
         self.checkpoint_path = checkpoint_path
 
+    def run_ellipse(
+        self,
+        video_path: Path,
+        output_path: Path,
+        *,
+        center_xy: Sequence[float],
+        box_xyxy: Sequence[float],
+        object_id: int = 1,
+        instance_id: str | None = None,
+        class_name: str | None = None,
+    ) -> dict[str, object]:
+        return _propagate_ellipse_prompt_with_predictor(
+            self.predictor,
+            video_path,
+            output_path,
+            center_xy=center_xy,
+            box_xyxy=box_xyxy,
+            object_id=object_id,
+            instance_id=instance_id,
+            class_name=class_name,
+            checkpoint_path=self.checkpoint_path,
+        )
+
     def run(
         self, video_path: Path, first_mask_path: Path, output_path: Path
     ) -> dict[str, object]:
@@ -337,6 +360,81 @@ def _propagate_point_prompts_with_predictor(
         "coordinate_conversion": "normalized xy multiplied by (width-1,height-1)",
         "overlap_resolution": "maximum positive SAM2 mask logit; otherwise background",
         "memory_policy": "offload video frames and inference state to CPU",
+    }
+    output_path.with_suffix(".json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return metadata
+
+
+def _propagate_ellipse_prompt_with_predictor(
+    predictor,
+    video_path: Path,
+    output_path: Path,
+    *,
+    center_xy: Sequence[float],
+    box_xyxy: Sequence[float],
+    object_id: int,
+    instance_id: str | None,
+    class_name: str | None,
+    checkpoint_path: Path,
+) -> dict[str, object]:
+    """Initialize SAM2 from one ellipse box plus center point and propagate."""
+
+    if not video_path.is_file():
+        raise FileNotFoundError(video_path)
+    if object_id < 1 or object_id > 255:
+        raise ValueError("object_id must be in [1, 255]")
+    box = np.asarray(box_xyxy, dtype=np.float32)
+    if box.shape != (4,):
+        raise ValueError(f"Expected xyxy box of four values, got {box.shape}")
+    point = np.asarray([[float(center_xy[0]), float(center_xy[1])]], dtype=np.float32)
+    labels = np.asarray([1], dtype=np.int32)
+    import torch
+
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+        state = predictor.init_state(
+            str(video_path),
+            offload_video_to_cpu=True,
+            offload_state_to_cpu=True,
+        )
+        predictor.add_new_points_or_box(
+            state,
+            frame_idx=0,
+            obj_id=int(object_id),
+            points=point,
+            labels=labels,
+            box=box,
+        )
+        frames: dict[int, NDArray[np.uint8]] = {}
+        for frame_index, propagated_ids, mask_logits in predictor.propagate_in_video(state):
+            logits = mask_logits[:, 0].float().cpu().numpy()
+            frames[int(frame_index)] = compose_label_frame(propagated_ids, logits)
+
+    expected_frames = int(state["num_frames"])
+    missing = sorted(set(range(expected_frames)) - frames.keys())
+    if missing:
+        raise RuntimeError(f"SAM2 did not return frames: {missing}")
+    stacked = np.stack([frames[index] for index in range(expected_frames)])
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(output_path, labels=stacked)
+    metadata: dict[str, object] = {
+        "schema_version": 1,
+        "kind": "sam2.1_hiera_large_ellipse_box_point_propagation",
+        "sam2_revision": PINNED_SAM2_COMMIT,
+        "sam2_config": SAM2_CONFIG,
+        "video_path": str(video_path),
+        "object_id": int(object_id),
+        "instance_id": instance_id,
+        "class_name": class_name,
+        "center_xy": [float(center_xy[0]), float(center_xy[1])],
+        "box_xyxy": [float(value) for value in box.tolist()],
+        "shape": list(stacked.shape),
+        "dtype": str(stacked.dtype),
+        "prompt": "axis-aligned ellipse extent box plus centroid point on frame 0",
+        "overlap_resolution": "maximum positive SAM2 mask logit; otherwise background",
+        "memory_policy": "offload video frames and inference state to CPU",
+        "checkpoint_path": str(checkpoint_path),
     }
     output_path.with_suffix(".json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
