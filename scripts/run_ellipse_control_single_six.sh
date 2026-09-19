@@ -9,7 +9,7 @@ set -euo pipefail
 REPO_ROOT="${REPO_ROOT:-/home/irtaza/Rare-events-OR-paper-implementaion}"
 RUN_ROOT="${RUN_ROOT:-/scratch/irtaza/or-repro-artifacts/reduced-30train-6heldout-2000step}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$RUN_ROOT/evaluation/ellipse-control-single-six}"
-MMOR_PAIR_MANIFEST="${MMOR_PAIR_MANIFEST:-$RUN_ROOT/geometry/pair-manifest.json}"
+MMOR_PAIR_MANIFEST="${MMOR_PAIR_MANIFEST:-/scratch/irtaza/or-repro-artifacts/reduced-30train-6heldout-600step/geometry/pair-manifest.json}"
 FOURDOR_PAIR_MANIFEST="${FOURDOR_PAIR_MANIFEST:-/scratch/irtaza/or-repro-artifacts/4dor-table1-six/geometry/pair-manifest.json}"
 TRAINER_ROOT="${TRAINER_ROOT:-/scratch/irtaza/upstreams/LTX-Video-Trainer}"
 SAM2_ROOT="${SAM2_ROOT:-/scratch/irtaza/upstreams/sam2}"
@@ -17,7 +17,7 @@ REPO_PYTHON="${REPO_PYTHON:-/home/irtaza/.venv/bin/python}"
 TRAINER_PYTHON="${TRAINER_PYTHON:-/scratch/irtaza/upstreams/LTX-Video-Trainer/.venv/bin/python}"
 SAM2_PYTHON="${SAM2_PYTHON:-$TRAINER_PYTHON}"
 CHECKPOINT="${CHECKPOINT:-$RUN_ROOT/training/checkpoints/lora_weights_step_02000.safetensors}"
-TRAINING_REPORT="${TRAINING_REPORT:-$RUN_ROOT/training/training-report.json}"
+TRAINING_REPORT="${TRAINING_REPORT:-$RUN_ROOT/training-report.json}"
 EXPECTED_SHA256="${EXPECTED_SHA256:-e0b7118a8a41196df84688925181480ea4e50afddbd02be370ec0f8af78c1ad9}"
 PROMPT="${PROMPT:-Fixed overhead surveillance view of an operating room.}"
 SEED="${SEED:-42}"
@@ -32,6 +32,7 @@ unset TRANSFORMERS_CACHE
 
 if [[ ! -f "$TRAINING_REPORT" ]]; then
   for candidate in \
+    "$RUN_ROOT/training-report.json" \
     "$RUN_ROOT/training/training-report.json" \
     "$RUN_ROOT/training/report.json" \
     "$RUN_ROOT/training/audit.json"; do
