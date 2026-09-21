@@ -92,7 +92,9 @@ def inception_logits(
     from torchvision.models import Inception_V3_Weights, inception_v3
 
     weights = Inception_V3_Weights.IMAGENET1K_V1
-    model = inception_v3(weights=weights, transform_input=False).to(device).eval()
+    # Torchvision's pretrained Inception-v3 weights require transform_input=True;
+    # the builder selects that compatible setting when it is not overridden.
+    model = inception_v3(weights=weights).to(device).eval()
     transform = weights.transforms()
     outputs: list[np.ndarray] = []
     with torch.inference_mode():
