@@ -29,7 +29,7 @@ def assert_patchgan_compatible_upstream(trainer_class: type) -> None:
             "compute_loss(model_pred, training_batch)",
         ),
         "_save_checkpoint": (
-            "lora_weights_step_",
+            'filename = f"{prefix}_weights_step_',
             "get_peft_model_state_dict",
         ),
     }

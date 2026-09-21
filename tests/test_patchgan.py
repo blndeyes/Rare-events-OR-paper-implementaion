@@ -46,8 +46,9 @@ class _CompatibleTrainer:
         return self._training_strategy.compute_loss(model_pred, training_batch)
 
     def _save_checkpoint(self):
-        lora_weights_step_ = self._global_step
-        return get_peft_model_state_dict(self._transformer), lora_weights_step_
+        prefix = "lora"
+        filename = f"{prefix}_weights_step_{self._global_step:05d}.safetensors"
+        return get_peft_model_state_dict(self._transformer), filename
 
 
 class _IncompatibleTrainer:
