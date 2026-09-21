@@ -93,6 +93,9 @@ class PersistentCsvMetrics:
         "recorded_at_utc",
         "global_step",
         "loss",
+        "flow_loss",
+        "adversarial_generator_loss",
+        "adversarial_discriminator_loss",
         "learning_rate",
         "step_time_seconds",
     )
@@ -125,6 +128,13 @@ class PersistentCsvMetrics:
                 "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
                 "global_step": int(metrics["train/global_step"]),
                 "loss": float(metrics["train/loss"]),
+                "flow_loss": _optional_float(metrics.get("train/flow_loss")),
+                "adversarial_generator_loss": _optional_float(
+                    metrics.get("train/adversarial_generator_loss")
+                ),
+                "adversarial_discriminator_loss": _optional_float(
+                    metrics.get("train/adversarial_discriminator_loss")
+                ),
                 "learning_rate": float(metrics["train/learning_rate"]),
                 "step_time_seconds": float(metrics["train/step_time"]),
             }
@@ -152,6 +162,10 @@ class PersistentCsvMetrics:
         self.close()
 
 
+def _optional_float(value: object) -> float | str:
+    return "" if value is None else float(value)
+
+
 def validate_loss_csv(path: Path, *, expected_steps: int = 600) -> dict[str, object]:
     with path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
@@ -164,8 +178,16 @@ def validate_loss_csv(path: Path, *, expected_steps: int = 600) -> dict[str, obj
             f"observed {len(observed_steps)} rows"
         )
     for row in rows:
-        for field in ("loss", "learning_rate", "step_time_seconds"):
-            if not math.isfinite(float(row[field])):
+        fields = (
+            "loss",
+            "flow_loss",
+            "adversarial_generator_loss",
+            "adversarial_discriminator_loss",
+            "learning_rate",
+            "step_time_seconds",
+        )
+        for field in fields:
+            if row.get(field, "") and not math.isfinite(float(row[field])):
                 errors.append(f"non-finite {field} at step {row['global_step']}")
     return {
         "passed": not errors,
@@ -252,6 +274,7 @@ def run_reduced_experiment(
     report_path: Path,
     profiles_config: Path,
     minimum_free_gib: float,
+    patchgan_config_path: Path | None = None,
 ) -> dict[str, object]:
     """Execute the pinned trainer with strict fresh-run and persistence guards."""
 
@@ -276,6 +299,12 @@ def run_reduced_experiment(
     )
     effective_path = output_dir / "effective-config.yaml"
     effective_path.write_text(yaml.safe_dump(effective, sort_keys=False), encoding="utf-8")
+    patchgan_config = None
+    if patchgan_config_path is not None:
+        from .patchgan import audit_discriminator_checkpoints, load_patchgan_config
+        from .patchgan_ltx import create_patchgan_trainer
+
+        patchgan_config = load_patchgan_config(patchgan_config_path)
 
     sys.path.insert(0, str(trainer_root / "src"))
     import ltxv_trainer.trainer as trainer_module
@@ -283,29 +312,60 @@ def run_reduced_experiment(
 
     report: dict[str, object] = {
         "schema_version": 1,
-        "kind": "reduced_30train_600step_reproduction_hypothesis",
+        "kind": (
+            "reduced_30train_600step_patchgan_reproduction_hypothesis"
+            if patchgan_config is not None
+            else "reduced_30train_600step_reproduction_hypothesis"
+        ),
         "state": "running",
         "trainer_revision": PINNED_TRAINER_COMMIT,
         "fresh_lora": True,
-        "patchgan_enabled": False,
+        "patchgan_enabled": patchgan_config is not None,
         "disk_preflight": disk,
         "effective_config": str(effective_path),
     }
+    if patchgan_config is not None:
+        report["patchgan"] = {
+            "config_path": str(patchgan_config_path),
+            "config": patchgan_config.__dict__,
+            "paper_equivalent": False,
+            "generator_checkpoint_format": "ordinary_ltx_lora_safetensors",
+            "discriminator_checkpoint_format": "separate_discriminator_only_safetensors",
+        }
     _write_json(report_path, report)
     metrics_path = output_dir / "loss-history.csv"
     try:
         config = LtxvTrainerConfig(**effective)
-        trainer = trainer_module.LtxvTrainer(config)
+        trainer = (
+            create_patchgan_trainer(config, patchgan_config)
+            if patchgan_config is not None
+            else trainer_module.LtxvTrainer(config)
+        )
         with PersistentCsvMetrics(metrics_path) as metrics:
             trainer._log_metrics = metrics.wrap(trainer._log_metrics)
             output, stats = trainer.train(disable_progress_bars=True)
         loss_audit = validate_loss_csv(metrics_path)
         checkpoint_audit = audit_checkpoints(output_dir / "checkpoints")
+        discriminator_audit = (
+            audit_discriminator_checkpoints(
+                output_dir / "checkpoints",
+                expected_steps=EXPECTED_CHECKPOINT_STEPS,
+            )
+            if patchgan_config is not None
+            else None
+        )
         report.update(
             {
                 "state": (
                     "passed"
-                    if loss_audit["passed"] and checkpoint_audit["passed"]
+                    if (
+                        loss_audit["passed"]
+                        and checkpoint_audit["passed"]
+                        and (
+                            discriminator_audit is None
+                            or discriminator_audit["passed"]
+                        )
+                    )
                     else "failed"
                 ),
                 "output": str(output),
@@ -314,6 +374,8 @@ def run_reduced_experiment(
                 "checkpoint_audit": checkpoint_audit,
             }
         )
+        if discriminator_audit is not None:
+            report["discriminator_checkpoint_audit"] = discriminator_audit
     except Exception as error:  # noqa: BLE001 - persist every expensive training failure.
         report.update(
             {
@@ -326,6 +388,11 @@ def run_reduced_experiment(
         if metrics_path.is_file():
             report["loss_audit"] = validate_loss_csv(metrics_path)
         report["checkpoint_audit"] = audit_checkpoints(output_dir / "checkpoints")
+        if patchgan_config is not None:
+            report["discriminator_checkpoint_audit"] = audit_discriminator_checkpoints(
+                output_dir / "checkpoints",
+                expected_steps=EXPECTED_CHECKPOINT_STEPS,
+            )
     _write_json(report_path, report)
     return report
 
@@ -340,6 +407,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--profiles-config", type=Path, default=Path("configs/training_profiles.yaml")
     )
     parser.add_argument("--minimum-free-gib", type=float, default=15.0)
+    parser.add_argument(
+        "--patchgan-config",
+        type=Path,
+        help="Enable the isolated PatchGAN hypothesis using this explicit YAML config.",
+    )
     return parser
 
 
@@ -352,6 +424,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         report_path=args.report,
         profiles_config=args.profiles_config,
         minimum_free_gib=args.minimum_free_gib,
+        patchgan_config_path=args.patchgan_config,
     )
     print(json.dumps(report, indent=2, default=str))
     return 0 if report["state"] == "passed" else 1

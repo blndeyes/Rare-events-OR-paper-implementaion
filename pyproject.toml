@@ -25,6 +25,9 @@ evaluation = [
   "torch>=2.6,<3",
   "torchvision>=0.21,<1",
 ]
+patchgan = [
+  "torch>=2.6,<3",
+]
 finegrained = [
   "torch>=2.6,<3",
   "torchvision>=0.21,<1",

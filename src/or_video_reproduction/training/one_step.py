@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
 import traceback
-from typing import Sequence
+from collections.abc import Sequence
+from pathlib import Path
 
 from .ic_lora_smoke import PINNED_TRAINER_COMMIT, _git_head
 from .profiles import TrainingProfile, load_training_profile
@@ -53,6 +53,7 @@ def run_one_step(
     report_path: Path,
     *,
     profile: TrainingProfile,
+    patchgan_config_path: Path | None = None,
 ) -> dict[str, object]:
     if _git_head(trainer_root) != PINNED_TRAINER_COMMIT:
         raise ValueError(f"Trainer checkout must be pinned to {PINNED_TRAINER_COMMIT}")
@@ -74,8 +75,8 @@ def run_one_step(
     )
 
     sys.path.insert(0, str(trainer_root / "src"))
-    from ltxv_trainer.config import LtxvTrainerConfig
     import ltxv_trainer.trainer as trainer_module
+    from ltxv_trainer.config import LtxvTrainerConfig
 
     if profile.transformer_load_dtype == "fp16":
         official_loader = trainer_module.load_ltxv_components
@@ -87,16 +88,26 @@ def run_one_step(
         trainer_module.load_ltxv_components = load_fp16_components
 
     config = LtxvTrainerConfig(**effective)
+    patchgan_config = None
+    if patchgan_config_path is not None:
+        from .patchgan import load_patchgan_config
+        from .patchgan_ltx import create_patchgan_trainer
+
+        patchgan_config = load_patchgan_config(patchgan_config_path)
     torch.cuda.reset_peak_memory_stats()
     try:
-        trainer = trainer_module.LtxvTrainer(config)
+        trainer = (
+            create_patchgan_trainer(config, patchgan_config)
+            if patchgan_config is not None
+            else trainer_module.LtxvTrainer(config)
+        )
         output, stats = trainer.train(disable_progress_bars=True)
         report: dict[str, object] = {
             "state": "passed",
             "output": str(output),
             "stats": stats.__dict__,
         }
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - persist every hardware-gate failure.
         report = {
             "state": "failed",
             "error_type": type(error).__name__,
@@ -116,6 +127,10 @@ def run_one_step(
             "mixed_precision": profile.mixed_precision,
             "transformer_load_dtype": profile.transformer_load_dtype,
             "paper_deviation": not profile.paper_faithful,
+            "patchgan_enabled": patchgan_config is not None,
+            "patchgan_config": (
+                patchgan_config.__dict__ if patchgan_config is not None else None
+            ),
             "peak_allocated_gib": torch.cuda.max_memory_allocated() / 1024**3,
             "peak_reserved_gib": torch.cuda.max_memory_reserved() / 1024**3,
         }
@@ -138,6 +153,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("configs/training_profiles.yaml"),
     )
     parser.add_argument("--profile", required=True)
+    parser.add_argument(
+        "--patchgan-config",
+        type=Path,
+        help="Enable the isolated PatchGAN hypothesis for this one-step hardware gate.",
+    )
     return parser
 
 
@@ -151,6 +171,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output_dir,
         args.report,
         profile=profile,
+        patchgan_config_path=args.patchgan_config,
     )
     print(json.dumps(report, indent=2, default=str))
     return 0 if report["state"] == "passed" else 1

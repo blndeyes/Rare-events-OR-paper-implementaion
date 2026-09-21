@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from or_video_reproduction.training.reduced_run import (
     PersistentCsvMetrics,
     audit_checkpoints,
+    build_parser,
     build_reduced_run_config,
     validate_loss_csv,
 )
@@ -59,20 +60,29 @@ class ReducedRunTests(unittest.TestCase):
             with PersistentCsvMetrics(path) as logger:
                 wrapped = logger.wrap(forwarded.append)
                 for step in range(1, 4):
-                    wrapped(
-                        {
-                            "train/global_step": step,
-                            "train/loss": 1.0 / step,
-                            "train/learning_rate": 2e-4,
-                            "train/step_time": 0.5,
-                        }
-                    )
+                    metrics = {
+                        "train/global_step": step,
+                        "train/loss": 1.0 / step,
+                        "train/learning_rate": 2e-4,
+                        "train/step_time": 0.5,
+                    }
+                    if step > 1:
+                        metrics.update(
+                            {
+                                "train/flow_loss": 0.25,
+                                "train/adversarial_generator_loss": 0.5,
+                                "train/adversarial_discriminator_loss": 0.75,
+                            }
+                        )
+                    wrapped(metrics)
             with path.open(newline="", encoding="utf-8") as handle:
                 rows = list(csv.DictReader(handle))
             audit = validate_loss_csv(path, expected_steps=3)
 
         self.assertEqual(len(forwarded), 3)
         self.assertEqual([int(row["global_step"]) for row in rows], [1, 2, 3])
+        self.assertEqual(rows[0]["flow_loss"], "")
+        self.assertEqual(rows[1]["adversarial_generator_loss"], "0.5")
         self.assertTrue(audit["passed"])
 
     def test_checkpoint_audit_rejects_truncation_and_missing_steps(self) -> None:
@@ -89,6 +99,24 @@ class ReducedRunTests(unittest.TestCase):
         self.assertFalse(report["passed"])
         self.assertIn("below", report["samples"][0]["errors"][0])
         self.assertEqual(report["samples"][1]["errors"], ["missing checkpoint"])
+
+    def test_patchgan_is_opt_in_through_explicit_config_path(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "--trainer-root",
+                "trainer",
+                "--precomputed-root",
+                "data",
+                "--output-dir",
+                "output",
+                "--report",
+                "report.json",
+                "--patchgan-config",
+                "patchgan.yaml",
+            ]
+        )
+
+        self.assertEqual(args.patchgan_config, Path("patchgan.yaml"))
 
 
 if __name__ == "__main__":

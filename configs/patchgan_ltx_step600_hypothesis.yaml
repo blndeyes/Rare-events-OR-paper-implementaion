@@ -1,0 +1,26 @@
+# Explicit PatchGAN reproduction hypothesis.
+#
+# The paper does not disclose these values beyond naming PatchGAN and citing
+# pix2pix. This file is intentionally separate from paper_table1.yaml so these
+# runnable choices cannot be confused with verified author settings.
+patchgan:
+  enabled: true
+  architecture: pix2pix_70x70_2d
+  sample_channels: 3
+  condition_channels: 3
+  base_channels: 64
+  layers: 3
+  max_channels: 512
+  normalization: instance
+  input_normalization: zero_one_to_minus_one_one
+  objective: bce
+  adversarial_weight: 0.1
+  start_step: 0
+  # Process frames 0, 8, ..., 96 independently to bound discriminator memory.
+  frame_stride: 8
+  frame_batch_size: 1
+  gradient_checkpointing: true
+  learning_rate: 0.0002
+  beta1: 0.5
+  beta2: 0.999
+  discriminator_updates: 1

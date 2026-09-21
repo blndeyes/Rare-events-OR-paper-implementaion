@@ -1,8 +1,8 @@
+import tempfile
 import unittest
 from pathlib import Path
-import tempfile
 
-from or_video_reproduction.training.one_step import build_one_step_config
+from or_video_reproduction.training.one_step import build_one_step_config, build_parser
 from or_video_reproduction.training.profiles import load_training_profile
 
 
@@ -101,6 +101,28 @@ profiles:
             path.write_text(source, encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "unquantized BF16"):
                 load_training_profile(path, "invalid")
+
+    def test_patchgan_hardware_gate_is_explicitly_opt_in(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "--paper-config",
+                "paper.yaml",
+                "--trainer-root",
+                "trainer",
+                "--precomputed-root",
+                "data",
+                "--output-dir",
+                "output",
+                "--report",
+                "report.json",
+                "--profile",
+                "integration",
+                "--patchgan-config",
+                "patchgan.yaml",
+            ]
+        )
+
+        self.assertEqual(args.patchgan_config, Path("patchgan.yaml"))
 
 
 if __name__ == "__main__":
