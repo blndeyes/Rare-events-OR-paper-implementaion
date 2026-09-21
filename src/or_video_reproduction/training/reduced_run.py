@@ -16,7 +16,11 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .ic_lora_smoke import PINNED_TRAINER_COMMIT, _git_head
+from .ic_lora_smoke import (
+    PINNED_TRAINER_COMMIT,
+    _git_head,
+    ensure_trainer_venv_bin_on_path,
+)
 from .profiles import load_training_profile
 
 EXPECTED_CHECKPOINT_STEPS = (100, 200, 300, 400, 500, 600)
@@ -280,6 +284,7 @@ def run_reduced_experiment(
 
     if _git_head(trainer_root) != PINNED_TRAINER_COMMIT:
         raise ValueError(f"Trainer checkout must be pinned to {PINNED_TRAINER_COMMIT}")
+    ensure_trainer_venv_bin_on_path(trainer_root)
     profile = load_training_profile(profiles_config, "faithful_bf16")
     if not profile.paper_faithful:
         raise ValueError("Reduced run requires the faithful BF16 profile")

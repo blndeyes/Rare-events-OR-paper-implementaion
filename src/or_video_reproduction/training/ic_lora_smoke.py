@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Sequence
-
 
 PINNED_TRAINER_COMMIT = "e055182fa36dba6f48eb0919aef09d277da30fbd"
 
@@ -22,6 +22,40 @@ def _git_head(repository: Path) -> str:
         text=True,
     )
     return result.stdout.strip()
+
+
+def trainer_venv_bin_dir(trainer_root: Path) -> Path:
+    """Return the pinned trainer virtualenv binary directory for this platform."""
+
+    if os.name == "nt":
+        return trainer_root / ".venv" / "Scripts"
+    return trainer_root / ".venv" / "bin"
+
+
+def ensure_trainer_venv_bin_on_path(trainer_root: Path) -> Path | None:
+    """Expose venv-local tools such as ninja to ``torch.utils.cpp_extension``.
+
+    Quanto's CUDA unpack JIT looks up ``ninja`` on ``PATH``. The trainer venv
+    already ships ninja, but launching ``python -m`` does not prepend the venv
+    ``bin`` directory, so the one-step INT2 gate fails with
+    ``Ninja is required to load C++ extensions``.
+    """
+
+    venv_bin = trainer_venv_bin_dir(trainer_root).resolve()
+    ninja = venv_bin / ("ninja.exe" if os.name == "nt" else "ninja")
+    if not ninja.is_file():
+        return None
+    prefix = str(venv_bin)
+    current = os.environ.get("PATH", "")
+    parts = [part for part in current.split(os.pathsep) if part]
+    if parts:
+        try:
+            if Path(parts[0]).resolve() == venv_bin:
+                return venv_bin
+        except OSError:
+            pass
+    os.environ["PATH"] = prefix + (os.pathsep + current if current else "")
+    return venv_bin
 
 
 def alignment_report(paper: dict[str, object], official: dict[str, object]) -> dict[str, object]:

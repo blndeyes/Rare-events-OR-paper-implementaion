@@ -1,7 +1,12 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
+from or_video_reproduction.training.ic_lora_smoke import (
+    ensure_trainer_venv_bin_on_path,
+    trainer_venv_bin_dir,
+)
 from or_video_reproduction.training.one_step import build_one_step_config, build_parser
 from or_video_reproduction.training.profiles import load_training_profile
 
@@ -123,6 +128,34 @@ profiles:
         )
 
         self.assertEqual(args.patchgan_config, Path("patchgan.yaml"))
+
+    def test_venv_ninja_is_prepended_to_path_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            trainer_root = Path(directory)
+            venv_bin = trainer_venv_bin_dir(trainer_root)
+            venv_bin.mkdir(parents=True)
+            ninja = venv_bin / ("ninja.exe" if os.name == "nt" else "ninja")
+            ninja.write_bytes(b"")
+            original = os.environ.get("PATH", "")
+            try:
+                located = ensure_trainer_venv_bin_on_path(trainer_root)
+                self.assertEqual(located, venv_bin.resolve())
+                self.assertTrue(
+                    os.environ["PATH"].startswith(str(venv_bin.resolve()) + os.pathsep)
+                    or os.environ["PATH"] == str(venv_bin.resolve())
+                )
+            finally:
+                os.environ["PATH"] = original
+
+    def test_missing_venv_ninja_does_not_change_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            original = os.environ.get("PATH", "")
+            try:
+                located = ensure_trainer_venv_bin_on_path(Path(directory))
+                self.assertIsNone(located)
+                self.assertEqual(os.environ.get("PATH", ""), original)
+            finally:
+                os.environ["PATH"] = original
 
 
 if __name__ == "__main__":

@@ -9,7 +9,11 @@ import traceback
 from collections.abc import Sequence
 from pathlib import Path
 
-from .ic_lora_smoke import PINNED_TRAINER_COMMIT, _git_head
+from .ic_lora_smoke import (
+    PINNED_TRAINER_COMMIT,
+    _git_head,
+    ensure_trainer_venv_bin_on_path,
+)
 from .profiles import TrainingProfile, load_training_profile
 
 
@@ -57,6 +61,7 @@ def run_one_step(
 ) -> dict[str, object]:
     if _git_head(trainer_root) != PINNED_TRAINER_COMMIT:
         raise ValueError(f"Trainer checkout must be pinned to {PINNED_TRAINER_COMMIT}")
+    ensure_trainer_venv_bin_on_path(trainer_root)
 
     import torch
     import yaml
