@@ -297,8 +297,13 @@ class PatchGANLtxTrainerMixin:
     def _training_step(self, batch: dict[str, dict[str, Tensor]]) -> Tensor:
         training_batch = self._training_strategy.prepare_batch(batch, self._timestep_sampler)
         model_inputs = self._training_strategy.prepare_model_inputs(training_batch)
-        model_prediction = self._transformer(**model_inputs)[0]
-        flow_loss = self._training_strategy.compute_loss(model_prediction, training_batch)
+        # Retaining the 13B transformer's backward activations on CUDA leaves
+        # too little room even for a 256px differentiable VAE tile. PyTorch's
+        # saved-tensor hook moves only those activations to pinned CPU memory
+        # and restores them lazily during backward.
+        with torch.autograd.graph.save_on_cpu(pin_memory=True):
+            model_prediction = self._transformer(**model_inputs)[0]
+            flow_loss = self._training_strategy.compute_loss(model_prediction, training_batch)
 
         if self._global_step < self._patchgan_config.start_step:
             self._last_patchgan_metrics = {
