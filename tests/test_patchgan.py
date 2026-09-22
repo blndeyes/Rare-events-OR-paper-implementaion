@@ -18,7 +18,9 @@ from or_video_reproduction.training.patchgan import (
 )
 from or_video_reproduction.training.patchgan_ltx import (
     assert_patchgan_compatible_upstream,
+    call_with_cuda_oom_offload,
     configure_patchgan_vae,
+    module_device,
     predict_clean_latents,
     target_token_sigmas,
 )
@@ -271,6 +273,69 @@ class PatchGANTests(unittest.TestCase):
         )
         self.assertTrue(vae.use_framewise_decoding)
         self.assertEqual(vae.calls, ["tiling", "slicing", "gradient_checkpointing"])
+
+    def test_cuda_oom_offloads_modules_to_cpu_then_retries(self) -> None:
+        class _FakeParam:
+            def __init__(self) -> None:
+                self.device = torch.device("cuda")
+
+        class _FakeModule:
+            def __init__(self, name: str) -> None:
+                self.name = name
+                self._param = _FakeParam()
+
+            def parameters(self):
+                yield self._param
+
+            def to(self, device):
+                self._param.device = torch.device(device)
+                return self
+
+        transformer = _FakeModule("transformer")
+        vae = _FakeModule("vae")
+        calls: list[str] = []
+
+        def decode():
+            calls.append(f"{module_device(transformer).type}:{module_device(vae).type}")
+            if module_device(transformer).type != "cpu":
+                raise torch.cuda.OutOfMemoryError("need transformer offload")
+            if module_device(vae).type != "cpu":
+                raise torch.cuda.OutOfMemoryError("need vae offload")
+            return "ok"
+
+        result, offloaded = call_with_cuda_oom_offload(decode, (transformer, vae))
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(calls, ["cuda:cuda", "cpu:cuda", "cpu:cpu"])
+        self.assertEqual(len(offloaded), 2)
+        self.assertEqual(module_device(transformer).type, "cpu")
+        self.assertEqual(module_device(vae).type, "cpu")
+
+    def test_cuda_oom_restores_modules_when_every_retry_fails(self) -> None:
+        class _FakeParam:
+            def __init__(self) -> None:
+                self.device = torch.device("cuda")
+
+        class _FakeModule:
+            def __init__(self) -> None:
+                self._param = _FakeParam()
+
+            def parameters(self):
+                yield self._param
+
+            def to(self, device):
+                self._param.device = torch.device(device)
+                return self
+
+        module = _FakeModule()
+
+        def always_fail():
+            raise torch.cuda.OutOfMemoryError("still oom")
+
+        with self.assertRaises(torch.cuda.OutOfMemoryError):
+            call_with_cuda_oom_offload(always_fail, (module,))
+
+        self.assertEqual(module_device(module).type, "cuda")
 
 
 if __name__ == "__main__":

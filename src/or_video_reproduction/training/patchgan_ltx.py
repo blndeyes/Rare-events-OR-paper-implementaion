@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import inspect
 import json
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import torch
 from torch import Tensor
 from torch.optim import Adam
 
 from .patchgan import ConditionalPatchGAN, PatchGANConfig, architecture_record, frozen
+
+T = TypeVar("T")
 
 
 def assert_patchgan_compatible_upstream(trainer_class: type) -> None:
@@ -87,6 +90,85 @@ def configure_patchgan_vae(vae: Any) -> dict[str, bool]:
     return flags
 
 
+def empty_cuda_cache() -> None:
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def module_device(module: Any) -> torch.device:
+    """Return the device of the first parameter, defaulting to CPU."""
+
+    try:
+        return next(module.parameters()).device
+    except StopIteration:
+        return torch.device("cpu")
+
+
+def offload_module_to_cpu(module: Any) -> torch.device:
+    """Move a module to CPU and free CUDA caching allocator pages."""
+
+    original = module_device(module)
+    if original.type != "cpu":
+        module.to("cpu")
+        empty_cuda_cache()
+    return original
+
+
+def restore_module_device(module: Any, device: torch.device) -> None:
+    if module_device(module) != device:
+        module.to(device)
+
+
+def call_with_cuda_oom_offload(
+    fn: Callable[[], T],
+    modules: Sequence[Any],
+) -> tuple[T, list[tuple[Any, torch.device]]]:
+    """Retry ``fn`` after offloading modules to CPU one-by-one on CUDA OOM.
+
+    Offload order is the given ``modules`` sequence. This is a 4090 plumbing
+    fallback, not a paper-disclosed training setting.
+    """
+
+    offloaded: list[tuple[Any, torch.device]] = []
+    last_error: torch.cuda.OutOfMemoryError | None = None
+    for attempt in range(len(modules) + 1):
+        try:
+            return fn(), offloaded
+        except torch.cuda.OutOfMemoryError as error:
+            last_error = error
+            empty_cuda_cache()
+            if attempt >= len(modules):
+                break
+            original = offload_module_to_cpu(modules[attempt])
+            offloaded.append((modules[attempt], original))
+    for module, device in reversed(offloaded):
+        restore_module_device(module, device)
+    assert last_error is not None
+    raise last_error
+
+
+def restore_offloaded_modules(
+    offloaded: Sequence[tuple[Any, torch.device]],
+    *,
+    required: Any | None = None,
+) -> list[str]:
+    """Restore offloaded modules. Keep optional modules on CPU if reload OOMs."""
+
+    remaining_on_cpu: list[str] = []
+    preferred = [item for item in offloaded if item[0] is required]
+    others = [item for item in reversed(offloaded) if item[0] is not required]
+    for module, device in preferred + others:
+        try:
+            restore_module_device(module, device)
+            empty_cuda_cache()
+        except torch.cuda.OutOfMemoryError:
+            empty_cuda_cache()
+            if module is required:
+                raise
+            remaining_on_cpu.append(type(module).__name__)
+    return remaining_on_cpu
+
+
 def target_token_sigmas(sigmas: Tensor, conditioning_mask: Tensor) -> Tensor:
     """Expand sample sigmas and force clean conditioning tokens to timestep zero."""
 
@@ -123,6 +205,10 @@ class PatchGANLtxTrainerMixin:
         self._vae.eval().to(self._accelerator.device)
         self._patchgan_vae_flags = configure_patchgan_vae(self._vae)
         self._last_patchgan_metrics: dict[str, float] = {}
+        self._patchgan_offload_events: list[str] = []
+
+    def _vae_device(self) -> torch.device:
+        return module_device(self._vae)
 
     def _decode_latent_batch(
         self,
@@ -135,6 +221,7 @@ class PatchGANLtxTrainerMixin:
         from ltxv_trainer.ltxv_utils import decode_video
 
         decode_dtype = getattr(self._vae, "dtype", torch.float32)
+        vae_device = self._vae_device()
         decoded = [
             decode_video(
                 self._vae,
@@ -142,12 +229,43 @@ class PatchGANLtxTrainerMixin:
                 num_frames=num_frames,
                 height=height,
                 width=width,
-                device=self._accelerator.device,
+                device=vae_device,
                 dtype=decode_dtype,
             )
             for index in range(packed_latents.shape[0])
         ]
         return torch.cat(decoded)
+
+    def _decode_patchgan_videos(
+        self,
+        predicted_clean: Tensor,
+        batch: dict[str, dict[str, Tensor]],
+        decode_args: dict[str, int],
+    ) -> tuple[Tensor, Tensor, Tensor, list[tuple[Any, torch.device]]]:
+        def _decode_all() -> tuple[Tensor, Tensor, Tensor]:
+            fake_video = self._decode_latent_batch(predicted_clean, **decode_args)
+            with torch.no_grad():
+                real_video = self._decode_latent_batch(batch["latents"]["latents"], **decode_args)
+                condition_video = self._decode_latent_batch(
+                    batch["ref_latents"]["latents"], **decode_args
+                )
+            return fake_video, real_video, condition_video
+
+        videos, offloaded = call_with_cuda_oom_offload(
+            _decode_all,
+            (self._transformer, self._vae),
+        )
+        self._patchgan_offload_events = [
+            f"{type(module).__name__}->{original}" for module, original in offloaded
+        ]
+        fake_video, real_video, condition_video = videos
+        target = self._accelerator.device
+        return (
+            fake_video.to(target),
+            real_video.to(target),
+            condition_video.to(target),
+            offloaded,
+        )
 
     def _training_step(self, batch: dict[str, dict[str, Tensor]]) -> Tensor:
         training_batch = self._training_strategy.prepare_batch(batch, self._timestep_sampler)
@@ -182,33 +300,35 @@ class PatchGANLtxTrainerMixin:
             "width": training_batch.width,
         }
         del model_inputs
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        fake_video = self._decode_latent_batch(predicted_clean, **decode_args)
-        with torch.no_grad():
-            real_video = self._decode_latent_batch(batch["latents"]["latents"], **decode_args)
-            condition_video = self._decode_latent_batch(
-                batch["ref_latents"]["latents"], **decode_args
+        empty_cuda_cache()
+        offloaded: list[tuple[Any, torch.device]] = []
+        try:
+            fake_video, real_video, condition_video, offloaded = self._decode_patchgan_videos(
+                predicted_clean,
+                batch,
+                decode_args,
             )
+            discriminator_loss = torch.zeros((), device=fake_video.device)
+            for _ in range(self._patchgan_config.discriminator_updates):
+                self._patchgan_optimizer.zero_grad(set_to_none=True)
+                discriminator_loss = self._patchgan.discriminator_loss(
+                    condition_video, real_video, fake_video
+                )
+                self._accelerator.backward(discriminator_loss)
+                self._patchgan_optimizer.step()
 
-        discriminator_loss = torch.zeros((), device=fake_video.device)
-        for _ in range(self._patchgan_config.discriminator_updates):
-            self._patchgan_optimizer.zero_grad(set_to_none=True)
-            discriminator_loss = self._patchgan.discriminator_loss(
-                condition_video, real_video, fake_video
-            )
-            self._accelerator.backward(discriminator_loss)
-            self._patchgan_optimizer.step()
-
-        with frozen(self._patchgan.discriminator):
-            generator_loss = self._patchgan.generator_loss(condition_video, fake_video)
-        total_loss = flow_loss + self._patchgan_config.adversarial_weight * generator_loss
-        self._last_patchgan_metrics = {
-            "train/flow_loss": float(flow_loss.detach()),
-            "train/adversarial_generator_loss": float(generator_loss.detach()),
-            "train/adversarial_discriminator_loss": float(discriminator_loss.detach()),
-        }
-        return total_loss
+            with frozen(self._patchgan.discriminator):
+                generator_loss = self._patchgan.generator_loss(condition_video, fake_video)
+            generator_loss = generator_loss.to(flow_loss.device)
+            total_loss = flow_loss + self._patchgan_config.adversarial_weight * generator_loss
+            self._last_patchgan_metrics = {
+                "train/flow_loss": float(flow_loss.detach()),
+                "train/adversarial_generator_loss": float(generator_loss.detach()),
+                "train/adversarial_discriminator_loss": float(discriminator_loss.detach()),
+            }
+            return total_loss
+        finally:
+            restore_offloaded_modules(offloaded, required=self._transformer)
 
     def _log_metrics(self, metrics: dict[str, object]) -> None:
         super()._log_metrics({**metrics, **self._last_patchgan_metrics})
