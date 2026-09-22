@@ -62,7 +62,7 @@ def predict_clean_latents(noisy_latents: Tensor, flow_prediction: Tensor, sigmas
     return noisy_latents - sigmas.to(noisy_latents) * flow_prediction
 
 
-def configure_patchgan_vae(vae: Any) -> dict[str, bool]:
+def configure_patchgan_vae(vae: Any) -> dict[str, bool | int]:
     """Enable official Diffusers tiled decode so 97-frame VAE reconstruction can fit a 24 GiB GPU.
 
     The one-step INT2 gate OOM'd while decoding the full latent volume in one
@@ -75,10 +75,21 @@ def configure_patchgan_vae(vae: Any) -> dict[str, bool]:
         "slicing": False,
         "gradient_checkpointing": False,
         "framewise_decoding": False,
+        "tile_sample_min_height": 256,
+        "tile_sample_min_width": 256,
+        "tile_sample_stride_height": 224,
+        "tile_sample_stride_width": 224,
     }
     if hasattr(vae, "enable_tiling"):
         vae.enable_tiling()
         flags["tiling"] = True
+        for name in (
+            "tile_sample_min_height",
+            "tile_sample_min_width",
+            "tile_sample_stride_height",
+            "tile_sample_stride_width",
+        ):
+            setattr(vae, name, flags[name])
     if hasattr(vae, "enable_slicing"):
         vae.enable_slicing()
         flags["slicing"] = True
