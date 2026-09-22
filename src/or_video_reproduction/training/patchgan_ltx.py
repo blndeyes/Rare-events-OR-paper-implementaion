@@ -58,6 +58,35 @@ def predict_clean_latents(noisy_latents: Tensor, flow_prediction: Tensor, sigmas
     return noisy_latents - sigmas.to(noisy_latents) * flow_prediction
 
 
+def configure_patchgan_vae(vae: Any) -> dict[str, bool]:
+    """Enable official Diffusers tiled decode so 97-frame VAE reconstruction can fit a 24 GiB GPU.
+
+    The one-step INT2 gate OOM'd while decoding the full latent volume in one
+    ``vae.decode`` call. Tiling, slicing, framewise decode, and VAE gradient
+    checkpointing are 4090 plumbing, not a paper-disclosed training setting.
+    """
+
+    flags = {
+        "tiling": False,
+        "slicing": False,
+        "gradient_checkpointing": False,
+        "framewise_decoding": False,
+    }
+    if hasattr(vae, "enable_tiling"):
+        vae.enable_tiling()
+        flags["tiling"] = True
+    if hasattr(vae, "enable_slicing"):
+        vae.enable_slicing()
+        flags["slicing"] = True
+    if hasattr(vae, "enable_gradient_checkpointing"):
+        vae.enable_gradient_checkpointing()
+        flags["gradient_checkpointing"] = True
+    if hasattr(vae, "use_framewise_decoding"):
+        vae.use_framewise_decoding = True
+        flags["framewise_decoding"] = True
+    return flags
+
+
 def target_token_sigmas(sigmas: Tensor, conditioning_mask: Tensor) -> Tensor:
     """Expand sample sigmas and force clean conditioning tokens to timestep zero."""
 
@@ -92,6 +121,7 @@ class PatchGANLtxTrainerMixin:
             self._patchgan, optimizer
         )
         self._vae.eval().to(self._accelerator.device)
+        self._patchgan_vae_flags = configure_patchgan_vae(self._vae)
         self._last_patchgan_metrics: dict[str, float] = {}
 
     def _decode_latent_batch(
@@ -104,6 +134,7 @@ class PatchGANLtxTrainerMixin:
     ) -> Tensor:
         from ltxv_trainer.ltxv_utils import decode_video
 
+        decode_dtype = getattr(self._vae, "dtype", torch.float32)
         decoded = [
             decode_video(
                 self._vae,
@@ -112,7 +143,7 @@ class PatchGANLtxTrainerMixin:
                 height=height,
                 width=width,
                 device=self._accelerator.device,
-                dtype=torch.float32,
+                dtype=decode_dtype,
             )
             for index in range(packed_latents.shape[0])
         ]
@@ -150,6 +181,9 @@ class PatchGANLtxTrainerMixin:
             "height": training_batch.height,
             "width": training_batch.width,
         }
+        del model_inputs
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         fake_video = self._decode_latent_batch(predicted_clean, **decode_args)
         with torch.no_grad():
             real_video = self._decode_latent_batch(batch["latents"]["latents"], **decode_args)

@@ -18,6 +18,7 @@ from or_video_reproduction.training.patchgan import (
 )
 from or_video_reproduction.training.patchgan_ltx import (
     assert_patchgan_compatible_upstream,
+    configure_patchgan_vae,
     predict_clean_latents,
     target_token_sigmas,
 )
@@ -240,6 +241,36 @@ class PatchGANTests(unittest.TestCase):
         self.assertTrue(audit["passed"])
         self.assertEqual(audit["samples"][0]["kind"], "patchgan_discriminator_only")
         self.assertEqual(len(audit["samples"][0]["sha256"]), 64)
+
+    def test_configure_patchgan_vae_enables_tiled_framewise_decode(self) -> None:
+        class _Vae:
+            def __init__(self) -> None:
+                self.use_framewise_decoding = False
+                self.calls: list[str] = []
+
+            def enable_tiling(self) -> None:
+                self.calls.append("tiling")
+
+            def enable_slicing(self) -> None:
+                self.calls.append("slicing")
+
+            def enable_gradient_checkpointing(self) -> None:
+                self.calls.append("gradient_checkpointing")
+
+        vae = _Vae()
+        flags = configure_patchgan_vae(vae)
+
+        self.assertEqual(
+            flags,
+            {
+                "tiling": True,
+                "slicing": True,
+                "gradient_checkpointing": True,
+                "framewise_decoding": True,
+            },
+        )
+        self.assertTrue(vae.use_framewise_decoding)
+        self.assertEqual(vae.calls, ["tiling", "slicing", "gradient_checkpointing"])
 
 
 if __name__ == "__main__":

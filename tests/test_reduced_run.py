@@ -118,6 +118,65 @@ class ReducedRunTests(unittest.TestCase):
 
         self.assertEqual(args.patchgan_config, Path("patchgan.yaml"))
 
+    def test_int2_profile_quantizes_the_600_step_config(self) -> None:
+        official = {
+            "model": {"load_checkpoint": "/old"},
+            "lora": {"rank": 8, "alpha": 8},
+            "conditioning": {},
+            "optimization": {},
+            "acceleration": {"quantization": None},
+            "data": {},
+            "validation": {},
+            "checkpoints": {},
+            "wandb": {},
+            "hub": {},
+        }
+        result = build_reduced_run_config(
+            official,
+            precomputed_root=Path("/data"),
+            output_dir=Path("/output"),
+            quantization="int2-quanto",
+            mixed_precision="bf16",
+        )
+
+        self.assertEqual(result["optimization"]["steps"], 600)
+        self.assertEqual(result["acceleration"]["quantization"], "int2-quanto")
+        self.assertEqual(result["acceleration"]["mixed_precision_mode"], "bf16")
+        self.assertEqual(result["checkpoints"]["interval"], 100)
+
+    def test_profile_flag_defaults_to_faithful_bf16(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "--trainer-root",
+                "trainer",
+                "--precomputed-root",
+                "data",
+                "--output-dir",
+                "output",
+                "--report",
+                "report.json",
+                "--patchgan-config",
+                "patchgan.yaml",
+                "--profile",
+                "rtx4090_integration_int2",
+            ]
+        )
+
+        self.assertEqual(args.profile, "rtx4090_integration_int2")
+        default = build_parser().parse_args(
+            [
+                "--trainer-root",
+                "trainer",
+                "--precomputed-root",
+                "data",
+                "--output-dir",
+                "output",
+                "--report",
+                "report.json",
+            ]
+        )
+        self.assertEqual(default.profile, "faithful_bf16")
+
 
 if __name__ == "__main__":
     unittest.main()

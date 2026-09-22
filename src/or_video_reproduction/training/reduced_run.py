@@ -32,8 +32,10 @@ def build_reduced_run_config(
     *,
     precomputed_root: Path,
     output_dir: Path,
+    quantization: str = "no_change",
+    mixed_precision: str = "bf16",
 ) -> dict[str, object]:
-    """Return a fresh, unquantized 600-step config derived from the pinned template."""
+    """Return a fresh 600-step config derived from the pinned template."""
 
     effective = copy.deepcopy(official)
     effective["model"].update(
@@ -58,8 +60,8 @@ def build_reduced_run_config(
     )
     effective["acceleration"].update(
         {
-            "mixed_precision_mode": "bf16",
-            "quantization": None,
+            "mixed_precision_mode": mixed_precision,
+            "quantization": None if quantization == "no_change" else quantization,
             "load_text_encoder_in_8bit": False,
         }
     )
@@ -279,15 +281,14 @@ def run_reduced_experiment(
     profiles_config: Path,
     minimum_free_gib: float,
     patchgan_config_path: Path | None = None,
+    profile_name: str = "faithful_bf16",
 ) -> dict[str, object]:
     """Execute the pinned trainer with strict fresh-run and persistence guards."""
 
     if _git_head(trainer_root) != PINNED_TRAINER_COMMIT:
         raise ValueError(f"Trainer checkout must be pinned to {PINNED_TRAINER_COMMIT}")
     ensure_trainer_venv_bin_on_path(trainer_root)
-    profile = load_training_profile(profiles_config, "faithful_bf16")
-    if not profile.paper_faithful:
-        raise ValueError("Reduced run requires the faithful BF16 profile")
+    profile = load_training_profile(profiles_config, profile_name)
     if not precomputed_root.is_dir():
         raise FileNotFoundError(precomputed_root)
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -300,7 +301,11 @@ def run_reduced_experiment(
         (trainer_root / "configs/ltxv_13b_ic_lora.yaml").read_text(encoding="utf-8")
     )
     effective = build_reduced_run_config(
-        official, precomputed_root=precomputed_root, output_dir=output_dir
+        official,
+        precomputed_root=precomputed_root,
+        output_dir=output_dir,
+        quantization=profile.quantization,
+        mixed_precision=profile.mixed_precision,
     )
     effective_path = output_dir / "effective-config.yaml"
     effective_path.write_text(yaml.safe_dump(effective, sort_keys=False), encoding="utf-8")
@@ -326,6 +331,11 @@ def run_reduced_experiment(
         "trainer_revision": PINNED_TRAINER_COMMIT,
         "fresh_lora": True,
         "patchgan_enabled": patchgan_config is not None,
+        "profile": profile.name,
+        "profile_description": profile.description,
+        "quantization": profile.quantization,
+        "mixed_precision": profile.mixed_precision,
+        "paper_deviation": not profile.paper_faithful,
         "disk_preflight": disk,
         "effective_config": str(effective_path),
     }
@@ -417,6 +427,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Enable the isolated PatchGAN hypothesis using this explicit YAML config.",
     )
+    parser.add_argument(
+        "--profile",
+        default="faithful_bf16",
+        help="Named precision profile. INT2 is a 4090 plumbing deviation, not paper-faithful BF16.",
+    )
     return parser
 
 
@@ -430,6 +445,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         profiles_config=args.profiles_config,
         minimum_free_gib=args.minimum_free_gib,
         patchgan_config_path=args.patchgan_config,
+        profile_name=args.profile,
     )
     print(json.dumps(report, indent=2, default=str))
     return 0 if report["state"] == "passed" else 1
