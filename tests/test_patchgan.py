@@ -280,15 +280,15 @@ class PatchGANTests(unittest.TestCase):
                 "slicing": True,
                 "gradient_checkpointing": True,
                 "framewise_decoding": True,
-                "tile_sample_min_height": 128,
-                "tile_sample_min_width": 128,
-                "tile_sample_stride_height": 112,
-                "tile_sample_stride_width": 112,
+                "tile_sample_min_height": 256,
+                "tile_sample_min_width": 256,
+                "tile_sample_stride_height": 224,
+                "tile_sample_stride_width": 224,
             },
         )
         self.assertTrue(vae.use_framewise_decoding)
-        self.assertEqual(vae.tile_sample_min_height, 128)
-        self.assertEqual(vae.tile_sample_stride_height, 112)
+        self.assertEqual(vae.tile_sample_min_height, 256)
+        self.assertEqual(vae.tile_sample_stride_height, 224)
         self.assertEqual(vae.calls, ["tiling", "slicing", "gradient_checkpointing"])
 
     def test_cuda_oom_offloads_modules_to_cpu_then_retries(self) -> None:

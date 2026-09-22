@@ -75,10 +75,10 @@ def configure_patchgan_vae(vae: Any) -> dict[str, bool | int]:
         "slicing": False,
         "gradient_checkpointing": False,
         "framewise_decoding": False,
-        "tile_sample_min_height": 128,
-        "tile_sample_min_width": 128,
-        "tile_sample_stride_height": 112,
-        "tile_sample_stride_width": 112,
+        "tile_sample_min_height": 256,
+        "tile_sample_min_width": 256,
+        "tile_sample_stride_height": 224,
+        "tile_sample_stride_width": 224,
     }
     if hasattr(vae, "enable_tiling"):
         vae.enable_tiling()
@@ -258,7 +258,8 @@ class PatchGANLtxTrainerMixin:
         decode_args: dict[str, int],
     ) -> tuple[Tensor, Tensor, Tensor, list[tuple[Any, torch.device]]]:
         def _decode_all() -> tuple[Tensor, Tensor, Tensor]:
-            fake_video = self._decode_latent_batch(predicted_clean, **decode_args)
+            with torch.autograd.graph.save_on_cpu(pin_memory=True):
+                fake_video = self._decode_latent_batch(predicted_clean, **decode_args)
             with torch.no_grad():
                 real_video = self._decode_latent_batch(batch["latents"]["latents"], **decode_args)
                 condition_video = self._decode_latent_batch(
