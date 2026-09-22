@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
@@ -202,7 +203,10 @@ class PatchGANLtxTrainerMixin:
         self._patchgan, self._patchgan_optimizer = self._accelerator.prepare(
             self._patchgan, optimizer
         )
-        self._vae.eval().to(self._accelerator.device)
+        # The 13B INT2 transformer and differentiable full-video VAE decode do
+        # not fit on a 24 GiB 4090 together. Keep the VAE parked on CPU between
+        # adversarial passes; _decode_patchgan_videos performs an explicit swap.
+        self._vae.eval().to("cpu")
         self._patchgan_vae_flags = configure_patchgan_vae(self._vae)
         self._last_patchgan_metrics: dict[str, float] = {}
         self._patchgan_offload_events: list[str] = []
@@ -251,10 +255,22 @@ class PatchGANLtxTrainerMixin:
                 )
             return fake_video, real_video, condition_video
 
-        videos, offloaded = call_with_cuda_oom_offload(
-            _decode_all,
-            (self._transformer, self._vae),
-        )
+        transformer_device = offload_module_to_cpu(self._transformer)
+        offloaded = [(self._transformer, transformer_device)]
+        try:
+            restore_module_device(self._vae, self._accelerator.device)
+            videos = _decode_all()
+        except BaseException:
+            # Leave enough memory to restore the training module. If restoring
+            # also fails, retain the decode exception instead of masking it.
+            offload_module_to_cpu(self._vae)
+            try:
+                restore_offloaded_modules(offloaded, required=self._transformer)
+            except torch.cuda.OutOfMemoryError as restore_error:
+                self._patchgan_offload_events.append(
+                    f"restore_after_decode_error_failed:{restore_error}"
+                )
+            raise
         self._patchgan_offload_events = [
             f"{type(module).__name__}->{original}" for module, original in offloaded
         ]
@@ -294,6 +310,7 @@ class PatchGANLtxTrainerMixin:
             target_prediction,
             effective_sigmas,
         )
+        decode_leaf = predicted_clean.detach().requires_grad_(True)
         decode_args = {
             "num_frames": training_batch.num_frames,
             "height": training_batch.height,
@@ -302,9 +319,10 @@ class PatchGANLtxTrainerMixin:
         del model_inputs
         empty_cuda_cache()
         offloaded: list[tuple[Any, torch.device]] = []
+        restored = False
         try:
             fake_video, real_video, condition_video, offloaded = self._decode_patchgan_videos(
-                predicted_clean,
+                decode_leaf,
                 batch,
                 decode_args,
             )
@@ -319,16 +337,41 @@ class PatchGANLtxTrainerMixin:
 
             with frozen(self._patchgan.discriminator):
                 generator_loss = self._patchgan.generator_loss(condition_video, fake_video)
-            generator_loss = generator_loss.to(flow_loss.device)
-            total_loss = flow_loss + self._patchgan_config.adversarial_weight * generator_loss
+            (adversarial_gradient,) = torch.autograd.grad(generator_loss, decode_leaf)
+            generator_loss_value = generator_loss.detach().to(flow_loss.device)
             self._last_patchgan_metrics = {
                 "train/flow_loss": float(flow_loss.detach()),
-                "train/adversarial_generator_loss": float(generator_loss.detach()),
+                "train/adversarial_generator_loss": float(generator_loss_value),
                 "train/adversarial_discriminator_loss": float(discriminator_loss.detach()),
             }
+
+            # Release the differentiable VAE graph before bringing the 13B
+            # transformer back to CUDA. Propagate the already-computed pixel
+            # loss gradient through the retained transformer graph by means of
+            # a value-preserving surrogate scalar.
+            del fake_video, real_video, condition_video, generator_loss, discriminator_loss
+            offload_module_to_cpu(self._vae)
+            empty_cuda_cache()
+            restore_offloaded_modules(offloaded, required=self._transformer)
+            restored = True
+            adversarial_gradient = adversarial_gradient.to(predicted_clean)
+            surrogate = (predicted_clean * adversarial_gradient).sum()
+            surrogate = surrogate - surrogate.detach() + generator_loss_value
+            total_loss = flow_loss + self._patchgan_config.adversarial_weight * surrogate
             return total_loss
         finally:
-            restore_offloaded_modules(offloaded, required=self._transformer)
+            if not restored:
+                primary_error = sys.exc_info()[1]
+                offload_module_to_cpu(self._vae)
+                empty_cuda_cache()
+                try:
+                    restore_offloaded_modules(offloaded, required=self._transformer)
+                except torch.cuda.OutOfMemoryError as restore_error:
+                    if primary_error is None:
+                        raise
+                    self._patchgan_offload_events.append(
+                        f"restore_during_error_failed:{restore_error}"
+                    )
 
     def _log_metrics(self, metrics: dict[str, object]) -> None:
         super()._log_metrics({**metrics, **self._last_patchgan_metrics})

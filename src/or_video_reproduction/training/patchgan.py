@@ -225,6 +225,11 @@ class ConditionalPatchGAN(nn.Module):
         return frames.mul(2).sub(1)
 
     def _logits(self, frames: Tensor) -> Tensor:
+        discriminator_parameter = next(self.discriminator.parameters())
+        frames = frames.to(
+            device=discriminator_parameter.device,
+            dtype=discriminator_parameter.dtype,
+        )
         outputs = []
         for chunk in frames.split(self.config.frame_batch_size):
             if self.config.gradient_checkpointing and torch.is_grad_enabled():

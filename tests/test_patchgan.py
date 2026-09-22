@@ -140,6 +140,17 @@ class PatchGANTests(unittest.TestCase):
             all(parameter.requires_grad for parameter in patchgan.discriminator.parameters())
         )
 
+    def test_discriminator_casts_bfloat16_frames_to_parameter_dtype(self) -> None:
+        patchgan = ConditionalPatchGAN(_config(frame_stride=2))
+        condition = torch.rand(1, 3, 3, 96, 96, dtype=torch.bfloat16)
+        sample = torch.rand(1, 3, 3, 96, 96, dtype=torch.bfloat16, requires_grad=True)
+
+        loss = patchgan.generator_loss(condition, sample)
+        loss.backward()
+
+        self.assertEqual(loss.dtype, torch.float32)
+        self.assertIsNotNone(sample.grad)
+
     def test_strict_config_load_rejects_undisclosed_null_weight(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
