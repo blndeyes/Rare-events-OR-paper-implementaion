@@ -75,10 +75,10 @@ def configure_patchgan_vae(vae: Any) -> dict[str, bool | int]:
         "slicing": False,
         "gradient_checkpointing": False,
         "framewise_decoding": False,
-        "tile_sample_min_height": 256,
-        "tile_sample_min_width": 256,
-        "tile_sample_stride_height": 224,
-        "tile_sample_stride_width": 224,
+        "tile_sample_min_height": 128,
+        "tile_sample_min_width": 128,
+        "tile_sample_stride_height": 112,
+        "tile_sample_stride_width": 112,
     }
     if hasattr(vae, "enable_tiling"):
         vae.enable_tiling()
