@@ -1,0 +1,10 @@
+diff --git a/src/ltxv_trainer/trainer.py b/src/ltxv_trainer/trainer.py
+--- a/src/ltxv_trainer/trainer.py
++++ b/src/ltxv_trainer/trainer.py
+@@ -720,6 +720,7 @@ class LtxvTrainer:
+             transformer=self._accelerator.unwrap_model(self._transformer),
+         )
+         pipeline.set_progress_bar_config(disable=True)
++        pipeline.enable_model_cpu_offload()
+
+         # Create a task in the sampling progress

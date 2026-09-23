@@ -183,6 +183,7 @@ def assert_corrected_upstream(trainer_class: type) -> None:
         '"output_reference_comparison": False',
         "image.size != (width, height)",
         "output_size=(height, width)",
+        "pipeline.enable_model_cpu_offload()",
     )
     missing = [value for value in required if value not in source]
     if missing:
