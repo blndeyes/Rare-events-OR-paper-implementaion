@@ -1,0 +1,27 @@
+schema_version: 1
+
+# Reproduction hypothesis for the paper's undisclosed PatchGAN details. The
+# generator uses the paper's stated BF16 precision and LoRA rank/alpha 128/128.
+# LTX runs on Stone; this latent discriminator runs on irtazapc and returns an
+# adversarial gradient to the same generator update at every step.
+patchgan:
+  enabled: true
+  architecture: latent_patchgan_16x16_2d
+  sample_channels: 128
+  condition_channels: 128
+  base_channels: 64
+  layers: 1
+  max_channels: 128
+  normalization: instance
+  input_normalization: identity
+  objective: bce
+  adversarial_weight: 0.1
+  start_step: 0
+  frame_stride: 4
+  frame_batch_size: 1
+  gradient_checkpointing: false
+  learning_rate: 0.0002
+  beta1: 0.5
+  beta2: 0.999
+  discriminator_updates: 1
+  domain: latent
