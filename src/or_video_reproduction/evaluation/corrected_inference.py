@@ -128,6 +128,18 @@ def build_inference_config(
     if len(jobs) != len(first_frames):
         raise ValueError("Each inference job must have exactly one first frame")
     effective = copy.deepcopy(official)
+    from safetensors import safe_open
+
+    with safe_open(str(checkpoint), framework="pt", device="cpu") as handle:
+        lora_a = [
+            tuple(handle.get_tensor(key).shape)
+            for key in handle.keys()
+            if key.endswith(".lora_A.weight")
+        ]
+    ranks = {shape[0] for shape in lora_a if len(shape) == 2}
+    if not lora_a or len(ranks) != 1 or any(len(shape) != 2 for shape in lora_a):
+        raise ValueError(f"Cannot infer one consistent LoRA rank from {checkpoint}")
+    lora_rank = ranks.pop()
     effective["model"].update(
         {
             "model_source": "LTXV_13B_097_DEV",
@@ -135,6 +147,7 @@ def build_inference_config(
             "load_checkpoint": str(checkpoint),
         }
     )
+    effective["lora"].update({"rank": lora_rank, "alpha": lora_rank})
     effective["acceleration"].update(
         {
             "mixed_precision_mode": "bf16",
