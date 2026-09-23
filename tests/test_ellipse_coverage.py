@@ -69,3 +69,25 @@ def test_prepare_stone_run_rejects_mask_controls(tmp_path: Path) -> None:
         assert "Non-ellipse control" in str(error)
     else:
         raise AssertionError("Mask controls were accepted")
+
+
+def test_prepare_stone_run_points_to_pinned_entrypoint(tmp_path: Path) -> None:
+    source_run = tmp_path / "pinned" / "run.json"
+    old_manifest = tmp_path / "old.json"
+    _write(source_run, {"encoded_manifest": str(old_manifest), "bound_files": [{"path": str(old_manifest)}],
+                        "trainer_config": {"data": {"preprocessed_data_root": "old"}},
+                        "experiment_contract": {"name": "old"}})
+    tensor = tmp_path / "tensor.pt"
+    _write(tensor, b"tensor")
+    encoded = tmp_path / "new" / "manifest.json"
+    _write(encoded, {"status": "complete", "samples": [
+        {"role": "train" if index < 645 else "development", "id": str(index),
+         "source": {"control": {"path": "ellipse_depth.mp4"}},
+         "encoded": {"latents": _artifact(tensor), "ref_latents": _artifact(tensor),
+                     "conditions": _artifact(tensor)}}
+        for index in range(663)]})
+    output = tmp_path / "new_run.json"
+    prepare_stone_run(source_run, encoded, output)
+    run = json.loads(output.read_text())
+    assert run["training_entrypoint"] == str(source_run.parent / "train_runner.py")
+    assert run["control_representation"] == "ellipse_depth"

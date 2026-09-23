@@ -44,7 +44,7 @@ def _write_json(path: Path, value: Any) -> None:
 
 
 def _import_stone_runtime(run_path: Path, run: dict[str, Any]) -> tuple[Any, Any]:
-    entrypoint = run_path.parent / "train_runner.py"
+    entrypoint = Path(run.get("training_entrypoint", str(run_path.parent / "train_runner.py")))
     spec = importlib.util.spec_from_file_location("coverage_train_runner", entrypoint)
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot import coverage admission from {entrypoint}")

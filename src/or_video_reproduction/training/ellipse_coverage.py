@@ -121,6 +121,7 @@ def prepare_stone_run(source_run_path: Path, encoded_path: Path, output: Path) -
     matching[0].update(path=str(encoded_path), sha256=sha256(encoded_path), bytes=encoded_path.stat().st_size)
     run["encoded_manifest"] = str(encoded_path)
     run["trainer_config"]["data"]["preprocessed_data_root"] = str(encoded_path.parent / "encoded")
+    run["training_entrypoint"] = str(source_run_path.parent / "train_runner.py")
     run["control_representation"] = "ellipse_depth"
     run["experiment_contract"]["name"] = "coverage660 ellipse-depth PatchGAN, LTX-Video 13B 0.9.7 IC-LoRA"
     write_json(output, run)
