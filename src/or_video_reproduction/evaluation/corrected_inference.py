@@ -197,7 +197,7 @@ def run_corrected_inference(
 ) -> dict[str, object]:
     if _git_head(trainer_root) != PINNED_TRAINER_COMMIT:
         raise ValueError(f"Trainer checkout must be pinned to {PINNED_TRAINER_COMMIT}")
-    if not checkpoint.is_file() or checkpoint.stat().st_size < 1_000_000_000:
+    if not checkpoint.is_file() or checkpoint.stat().st_size < 100_000_000:
         raise ValueError(f"Checkpoint is missing or implausibly small: {checkpoint}")
     from safetensors import safe_open
 

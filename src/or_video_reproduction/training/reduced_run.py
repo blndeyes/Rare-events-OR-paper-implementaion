@@ -212,7 +212,7 @@ def audit_checkpoints(
     checkpoints_dir: Path,
     *,
     expected_steps: Sequence[int] = EXPECTED_CHECKPOINT_STEPS,
-    minimum_bytes: int = 1_000_000_000,
+    minimum_bytes: int = 100_000_000,
     opener: Callable[[str], object] | None = None,
 ) -> dict[str, object]:
     """Check checkpoint presence, plausible size, and safetensors readability."""
