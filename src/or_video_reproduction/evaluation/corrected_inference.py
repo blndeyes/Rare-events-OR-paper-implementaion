@@ -124,6 +124,7 @@ def build_inference_config(
     first_frames: Sequence[Path],
     prompt: str,
     seed: int,
+    quantization: str | None = None,
 ) -> dict[str, object]:
     if len(jobs) != len(first_frames):
         raise ValueError("Each inference job must have exactly one first frame")
@@ -151,7 +152,7 @@ def build_inference_config(
     effective["acceleration"].update(
         {
             "mixed_precision_mode": "bf16",
-            "quantization": None,
+            "quantization": quantization,
             "load_text_encoder_in_8bit": False,
         }
     )
@@ -206,6 +207,7 @@ def run_corrected_inference(
     output_dir: Path,
     prompt: str,
     seed: int,
+    quantization: str | None = None,
     split: str = "heldout",
 ) -> dict[str, object]:
     if _git_head(trainer_root) != PINNED_TRAINER_COMMIT:
@@ -238,6 +240,7 @@ def run_corrected_inference(
         first_frames=first_frames,
         prompt=prompt,
         seed=seed,
+        quantization=quantization,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "effective-inference-config.yaml").write_text(
@@ -287,6 +290,9 @@ def run_corrected_inference(
         "seed": seed,
         "inference_steps": 50,
         "guidance_scale": 3.5,
+        "inference_quantization": quantization,
+        "lora_rank": effective["lora"]["rank"],
+        "lora_alpha": effective["lora"]["alpha"],
         "video_contract": expected_probe,
         "samples": rows,
     }
@@ -303,6 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--seed", required=True, type=int)
+    parser.add_argument(
+        "--quantization",
+        default=None,
+        help="Optional pinned-trainer model quantization for constrained inference GPUs.",
+    )
     parser.add_argument("--split", default="heldout")
     return parser
 
@@ -316,6 +327,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output_dir,
         prompt=args.prompt,
         seed=args.seed,
+        quantization=args.quantization,
         split=args.split,
     )
     print(json.dumps(report, indent=2))
