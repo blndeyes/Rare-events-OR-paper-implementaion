@@ -98,6 +98,12 @@ def _run_generator(args: argparse.Namespace) -> int:
     train, development = admission.admission(run)
     if len(train) != 645 or len(development) != 18:
         raise ValueError("Coverage cohort counts differ")
+    control_representation = run.get("control_representation", "mask_depth")
+    if control_representation not in {"mask_depth", "ellipse_depth"}:
+        raise ValueError("Unknown control representation")
+    if any(Path(row["source"]["control"]["path"]).name != f"{control_representation}.mp4"
+           for row in train + development):
+        raise ValueError("Encoded controls differ from declared representation")
     prepared = json.loads(Path(run["encoded_manifest"]).read_text(encoding="utf-8"))
     if {row["id"] for row in prepared["samples"] if row["role"] == "train"} != {row["id"] for row in train}:
         raise ValueError("Trainer cohort differs from encoded training split")
@@ -203,8 +209,10 @@ def _run_generator(args: argparse.Namespace) -> int:
                 "patchgan_config_sha256": _sha256(args.patchgan_config), "upstream_commit": run["upstream_commit"],
                 "local_repo_commit": subprocess.check_output(["git", "-C", str(Path(__file__).resolve().parents[3]), "rev-parse", "HEAD"], text=True).strip(),
                 "optimizer_update_endpoint": 3000, "scheduler_total_updates": config.optimization.steps,
+                "control_representation": control_representation,
                 "paper_deviations": ["645 training pairs instead of the paper's 338",
-                                     "mask-depth conditioning selected by the user",
+                                     "mask-depth conditioning instead of ellipse geometry" if control_representation == "mask_depth"
+                                     else "ellipse geometry uses the documented moment-fit approximation",
                                      "latent 16x16 PatchGAN, BCE and weight 0.1 are reproduction hypotheses because the paper does not specify them",
                                      "training stops after 3000 updates instead of the paper's 8000"],
                 "patchgan_config": patchgan.__dict__,
