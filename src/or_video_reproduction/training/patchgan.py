@@ -20,6 +20,7 @@ from torch.nn import functional as F
 from torch.utils.checkpoint import checkpoint
 
 ObjectiveName = Literal["bce", "hinge"]
+DomainName = Literal["pixel", "latent"]
 
 
 @dataclass(frozen=True)
@@ -45,15 +46,28 @@ class PatchGANConfig:
     beta1: float
     beta2: float
     discriminator_updates: int
+    domain: DomainName = "pixel"
 
     def __post_init__(self) -> None:
-        if self.architecture != "pix2pix_70x70_2d":
+        architectures = {
+            "pix2pix_70x70_2d": ("pixel", 3, "zero_one_to_minus_one_one"),
+            "latent_patchgan_16x16_2d": ("latent", 1, "identity"),
+        }
+        if self.architecture not in architectures:
             raise ValueError(f"Unsupported PatchGAN architecture: {self.architecture}")
+        expected_domain, expected_layers, expected_input_normalization = architectures[
+            self.architecture
+        ]
+        if self.domain != expected_domain:
+            raise ValueError(
+                f"{self.architecture} requires domain={expected_domain}, got {self.domain}"
+            )
         if self.normalization != "instance":
             raise ValueError(f"Unsupported PatchGAN normalization: {self.normalization}")
-        if self.input_normalization != "zero_one_to_minus_one_one":
+        if self.input_normalization != expected_input_normalization:
             raise ValueError(
-                f"Unsupported PatchGAN input normalization: {self.input_normalization}"
+                f"{self.architecture} requires input_normalization="
+                f"{expected_input_normalization}, got {self.input_normalization}"
             )
         if self.objective not in ("bce", "hinge"):
             raise ValueError(f"Unsupported adversarial objective: {self.objective}")
@@ -70,8 +84,10 @@ class PatchGANConfig:
         invalid = [name for name, value in positive_ints.items() if value <= 0]
         if invalid:
             raise ValueError(f"PatchGAN integer settings must be positive: {invalid}")
-        if self.layers != 3:
-            raise ValueError("pix2pix_70x70_2d requires exactly three stride-2 layers")
+        if self.layers != expected_layers:
+            raise ValueError(
+                f"{self.architecture} requires exactly {expected_layers} stride-2 layers"
+            )
         if not self.enabled:
             raise ValueError("PatchGANConfig represents an enabled adversarial path")
         if self.adversarial_weight <= 0:
@@ -93,14 +109,16 @@ class PatchGANConfig:
 
         fields = set(cls.__dataclass_fields__)
         unknown = sorted(set(value) - fields)
-        missing = sorted(fields - set(value))
+        optional_defaults = {"domain": "pixel"}
+        missing = sorted(fields - set(value) - set(optional_defaults))
         null_fields = sorted(name for name in fields & set(value) if value[name] is None)
         if unknown or missing or null_fields:
             raise ValueError(
                 "Invalid PatchGAN configuration: "
                 f"unknown={unknown}, missing={missing}, null={null_fields}"
             )
-        return cls(**dict(value))
+        parsed = {**optional_defaults, **dict(value)}
+        return cls(**parsed)
 
 
 def load_patchgan_config(path: Path) -> PatchGANConfig:
@@ -118,11 +136,11 @@ def load_patchgan_config(path: Path) -> PatchGANConfig:
 
 
 class PatchDiscriminator2D(nn.Module):
-    """Conditional pix2pix 70x70 PatchGAN discriminator.
+    """Conditional spatial PatchGAN discriminator.
 
-    Inputs are channel-concatenated condition and RGB sample frames.  Three
-    stride-2 blocks followed by two stride-1 convolutions produce a spatial
-    authenticity map whose logits each see a 70x70 input receptive field.
+    Inputs are channel-concatenated condition and sample frames. Stride-2
+    blocks followed by two stride-1 convolutions produce a spatial authenticity
+    map. The configured layer count determines its receptive field.
     """
 
     def __init__(self, config: PatchGANConfig) -> None:
@@ -222,7 +240,9 @@ class ConditionalPatchGAN(nn.Module):
             sample,
             stride=self.config.frame_stride,
         )
-        return frames.mul(2).sub(1)
+        if self.config.input_normalization == "zero_one_to_minus_one_one":
+            return frames.mul(2).sub(1)
+        return frames
 
     def _logits(self, frames: Tensor) -> Tensor:
         discriminator_parameter = next(self.discriminator.parameters())

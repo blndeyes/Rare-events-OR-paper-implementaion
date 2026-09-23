@@ -11,6 +11,7 @@ import inspect
 import json
 import sys
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -193,6 +194,31 @@ def target_token_sigmas(sigmas: Tensor, conditioning_mask: Tensor) -> Tensor:
     return expanded
 
 
+def unpack_packed_latents(
+    packed_latents: Tensor,
+    *,
+    num_frames: int,
+    height: int,
+    width: int,
+) -> Tensor:
+    """Unpack LTX tokens to ``[B,C,T,H,W]`` without running the VAE."""
+
+    if packed_latents.ndim != 3:
+        raise ValueError("packed_latents must have shape [batch,tokens,channels]")
+    expected_tokens = num_frames * height * width
+    if packed_latents.shape[1] != expected_tokens:
+        raise ValueError(
+            f"expected {expected_tokens} latent tokens, got {packed_latents.shape[1]}"
+        )
+    return (
+        packed_latents.reshape(
+            packed_latents.shape[0], num_frames, height, width, packed_latents.shape[2]
+        )
+        .permute(0, 4, 1, 2, 3)
+        .contiguous()
+    )
+
+
 class PatchGANLtxTrainerMixin:
     """Mixin that adds an isolated adversarial objective to the pinned trainer."""
 
@@ -214,11 +240,12 @@ class PatchGANLtxTrainerMixin:
         self._patchgan, self._patchgan_optimizer = self._accelerator.prepare(
             self._patchgan, optimizer
         )
-        # The 13B INT2 transformer and differentiable full-video VAE decode do
-        # not fit on a 24 GiB 4090 together. Keep the VAE parked on CPU between
-        # adversarial passes; _decode_patchgan_videos performs an explicit swap.
         self._vae.eval().to("cpu")
-        self._patchgan_vae_flags = configure_patchgan_vae(self._vae)
+        self._patchgan_vae_flags = (
+            configure_patchgan_vae(self._vae)
+            if patchgan_config.domain == "pixel"
+            else {"enabled": False}
+        )
         self._last_patchgan_metrics: dict[str, float] = {}
         self._patchgan_offload_events: list[str] = []
 
@@ -298,11 +325,12 @@ class PatchGANLtxTrainerMixin:
     def _training_step(self, batch: dict[str, dict[str, Tensor]]) -> Tensor:
         training_batch = self._training_strategy.prepare_batch(batch, self._timestep_sampler)
         model_inputs = self._training_strategy.prepare_model_inputs(training_batch)
-        # Retaining the 13B transformer's backward activations on CUDA leaves
-        # too little room even for a 256px differentiable VAE tile. PyTorch's
-        # saved-tensor hook moves only those activations to pinned CPU memory
-        # and restores them lazily during backward.
-        with torch.autograd.graph.save_on_cpu(pin_memory=True):
+        if self._patchgan_config.domain == "pixel":
+            # The legacy full-pixel hypothesis needs CPU activation offload.
+            activation_context = torch.autograd.graph.save_on_cpu(pin_memory=True)
+        else:
+            activation_context = nullcontext()
+        with activation_context:
             model_prediction = self._transformer(**model_inputs)[0]
             flow_loss = self._training_strategy.compute_loss(model_prediction, training_batch)
 
@@ -327,12 +355,40 @@ class PatchGANLtxTrainerMixin:
             target_prediction,
             effective_sigmas,
         )
-        decode_leaf = predicted_clean.detach().requires_grad_(True)
-        decode_args = {
+        latent_shape = {
             "num_frames": training_batch.num_frames,
             "height": training_batch.height,
             "width": training_batch.width,
         }
+        if self._patchgan_config.domain == "latent":
+            fake_latents = unpack_packed_latents(predicted_clean, **latent_shape)
+            real_latents = unpack_packed_latents(
+                batch["latents"]["latents"], **latent_shape
+            )
+            condition_latents = unpack_packed_latents(
+                batch["ref_latents"]["latents"], **latent_shape
+            )
+            discriminator_loss = torch.zeros((), device=fake_latents.device)
+            for _ in range(self._patchgan_config.discriminator_updates):
+                self._patchgan_optimizer.zero_grad(set_to_none=True)
+                discriminator_loss = self._patchgan.discriminator_loss(
+                    condition_latents, real_latents, fake_latents
+                )
+                self._accelerator.backward(discriminator_loss)
+                self._patchgan_optimizer.step()
+            with frozen(self._patchgan.discriminator):
+                generator_loss = self._patchgan.generator_loss(
+                    condition_latents, fake_latents
+                )
+            self._last_patchgan_metrics = {
+                "train/flow_loss": float(flow_loss.detach()),
+                "train/adversarial_generator_loss": float(generator_loss.detach()),
+                "train/adversarial_discriminator_loss": float(discriminator_loss.detach()),
+            }
+            return flow_loss + self._patchgan_config.adversarial_weight * generator_loss
+
+        decode_leaf = predicted_clean.detach().requires_grad_(True)
+        decode_args = latent_shape
         del model_inputs
         empty_cuda_cache()
         offloaded: list[tuple[Any, torch.device]] = []

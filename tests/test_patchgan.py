@@ -23,6 +23,7 @@ from or_video_reproduction.training.patchgan_ltx import (
     module_device,
     predict_clean_latents,
     target_token_sigmas,
+    unpack_packed_latents,
 )
 
 
@@ -101,6 +102,53 @@ class PatchGANTests(unittest.TestCase):
         self.assertEqual(record["receptive_field"], 70)
         self.assertGreater(record["parameter_count"], 0)
         self.assertFalse(record["paper_equivalent"])
+
+    def test_latent_architecture_has_16px_field_and_identity_inputs(self) -> None:
+        config = _config(
+            architecture="latent_patchgan_16x16_2d",
+            domain="latent",
+            sample_channels=128,
+            condition_channels=128,
+            base_channels=4,
+            layers=1,
+            input_normalization="identity",
+            gradient_checkpointing=False,
+        )
+        model = PatchDiscriminator2D(config)
+
+        result = model(torch.randn(2, 256, 16, 16))
+
+        self.assertEqual(result.shape, (2, 1, 6, 6))
+        self.assertEqual(receptive_field(config), 16)
+
+    def test_unpack_packed_latents_preserves_token_order(self) -> None:
+        packed = torch.arange(1 * 2 * 3 * 4 * 5).reshape(1, 24, 5)
+
+        unpacked = unpack_packed_latents(packed, num_frames=2, height=3, width=4)
+
+        self.assertEqual(unpacked.shape, (1, 5, 2, 3, 4))
+        self.assertEqual(unpacked[0, :, 1, 2, 3].tolist(), packed[0, 23].tolist())
+
+    def test_latent_patchgan_generator_gradient_reaches_packed_latents(self) -> None:
+        config = _config(
+            architecture="latent_patchgan_16x16_2d",
+            domain="latent",
+            sample_channels=8,
+            condition_channels=8,
+            base_channels=4,
+            layers=1,
+            input_normalization="identity",
+            frame_stride=2,
+            gradient_checkpointing=False,
+        )
+        patchgan = ConditionalPatchGAN(config)
+        condition = torch.randn(1, 8, 5, 16, 16)
+        fake = torch.randn(1, 8, 5, 16, 16, requires_grad=True)
+
+        patchgan.generator_loss(condition, fake).backward()
+
+        self.assertIsNotNone(fake.grad)
+        self.assertGreater(float(fake.grad.abs().sum()), 0)
 
     def test_video_pairing_is_ordered_and_includes_final_frame(self) -> None:
         condition = torch.zeros(1, 3, 10, 64, 64)
@@ -195,7 +243,7 @@ class PatchGANTests(unittest.TestCase):
         self.assertEqual(loaded.start_step, 10)
 
     def test_rejects_non_70x70_layer_count(self) -> None:
-        with self.assertRaisesRegex(ValueError, "exactly three"):
+        with self.assertRaisesRegex(ValueError, "exactly 3"):
             _config(layers=4)
 
     def test_checked_in_hypothesis_is_complete_and_explicit(self) -> None:
