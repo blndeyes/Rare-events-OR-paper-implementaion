@@ -1,6 +1,9 @@
 diff --git a/src/ltxv_trainer/trainer.py b/src/ltxv_trainer/trainer.py
 --- a/src/ltxv_trainer/trainer.py
 +++ b/src/ltxv_trainer/trainer.py
-@@ -721,1 +721,2 @@
+@@ -719,4 +719,5 @@
+             transformer=self._accelerator.unwrap_model(self._transformer),
+         )
          pipeline.set_progress_bar_config(disable=True)
 +        pipeline.enable_model_cpu_offload()
+ 
