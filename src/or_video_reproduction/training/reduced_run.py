@@ -34,6 +34,7 @@ def build_reduced_run_config(
     output_dir: Path,
     quantization: str = "no_change",
     mixed_precision: str = "bf16",
+    lora_rank: int = 128,
 ) -> dict[str, object]:
     """Return a fresh 600-step config derived from the pinned template."""
 
@@ -41,7 +42,11 @@ def build_reduced_run_config(
     effective["model"].update(
         {"model_source": "LTXV_13B_097_DEV", "training_mode": "lora", "load_checkpoint": None}
     )
-    effective["lora"].update({"rank": 128, "alpha": 128, "dropout": 0.0})
+    if lora_rank <= 0:
+        raise ValueError("lora_rank must be positive")
+    effective["lora"].update(
+        {"rank": lora_rank, "alpha": lora_rank, "dropout": 0.0}
+    )
     effective["conditioning"].update(
         {"mode": "reference_video", "first_frame_conditioning_p": 0.2}
     )
@@ -282,6 +287,7 @@ def run_reduced_experiment(
     minimum_free_gib: float,
     patchgan_config_path: Path | None = None,
     profile_name: str = "faithful_bf16",
+    lora_rank: int = 128,
 ) -> dict[str, object]:
     """Execute the pinned trainer with strict fresh-run and persistence guards."""
 
@@ -306,6 +312,7 @@ def run_reduced_experiment(
         output_dir=output_dir,
         quantization=profile.quantization,
         mixed_precision=profile.mixed_precision,
+        lora_rank=lora_rank,
     )
     effective_path = output_dir / "effective-config.yaml"
     effective_path.write_text(yaml.safe_dump(effective, sort_keys=False), encoding="utf-8")
@@ -335,6 +342,8 @@ def run_reduced_experiment(
         "profile_description": profile.description,
         "quantization": profile.quantization,
         "mixed_precision": profile.mixed_precision,
+        "lora_rank": lora_rank,
+        "lora_alpha": lora_rank,
         "paper_deviation": not profile.paper_faithful,
         "disk_preflight": disk,
         "effective_config": str(effective_path),
@@ -432,6 +441,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="faithful_bf16",
         help="Named precision profile. INT2 is a 4090 plumbing deviation, not paper-faithful BF16.",
     )
+    parser.add_argument(
+        "--lora-rank",
+        type=int,
+        default=128,
+        help="LoRA rank and alpha. Values below 128 are explicit memory-saving deviations.",
+    )
     return parser
 
 
@@ -446,6 +461,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         minimum_free_gib=args.minimum_free_gib,
         patchgan_config_path=args.patchgan_config,
         profile_name=args.profile,
+        lora_rank=args.lora_rank,
     )
     print(json.dumps(report, indent=2, default=str))
     return 0 if report["state"] == "passed" else 1
