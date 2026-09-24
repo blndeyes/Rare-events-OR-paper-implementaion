@@ -47,6 +47,7 @@ Copy the immutable input bundle **directly PC → Stone**, then verify its hashe
 on Stone. Never route it through Windows. Check Stone free disk first.
 
 ```bash
+RUN_ID=competitor-ellipse-s3000-001
 ssh irtazastone 'df -h /scratch/irtaza'
 ssh irtazastone "mkdir -p /scratch/irtaza/or-coverage660-$RUN_ID"
 rsync -a --partial "$PC_BUNDLE/" "irtazastone:$STONE_BUNDLE/"
@@ -63,6 +64,7 @@ records hashes/configuration. It refuses a busy GPU (<40 GiB free). The launch
 script refuses a different checkpoint or partial output on resume.
 
 ```bash
+RUN_ID=competitor-ellipse-s3000-001
 cd /scratch/irtaza/dualhost-patchgan-code-272c163
 tmux new-session -d -s "coverage660-ellipse-$RUN_ID" \
   "BUNDLE_ROOT=/scratch/irtaza/or-coverage660-$RUN_ID/bundle OUTPUT_ROOT=/scratch/irtaza/or-coverage660-$RUN_ID/outputs CHECKPOINT=/scratch/irtaza/or-ellipse-coverage660-ce506f0-20260923T1405Z/generator-v2/checkpoints/lora_weights_step_03000.safetensors bash scripts/run_coverage660_ellipse_3000.sh > /scratch/irtaza/or-coverage660-$RUN_ID/generation.log 2>&1"
@@ -77,6 +79,7 @@ After verifying all 90 lossless videos, copy the outputs **directly Stone → PC
 preserving paths and hashes. On irtazapc:
 
 ```bash
+RUN_ID=competitor-ellipse-s3000-001
 PC_ROOT=/home/irtaza/or-coverage660-$RUN_ID
 rsync -a --partial "irtazastone:/scratch/irtaza/or-coverage660-$RUN_ID/outputs/" "$PC_ROOT/outputs/"
 rsync -a "irtazastone:/scratch/irtaza/or-ellipse-coverage660-ce506f0-20260923T1405Z/generator-v2/checkpoints/lora_weights_step_03000.safetensors" "$PC_ROOT/checkpoint.safetensors"
