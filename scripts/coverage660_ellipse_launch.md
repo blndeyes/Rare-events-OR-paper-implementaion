@@ -7,9 +7,10 @@ irtazapc. This run has 18 development reconstructions and 72 challenge requests;
 the six base requests are excluded. It uses the ellipse controls, not mask controls.
 
 The local repository must first be committed and pushed through GitHub, then
-pulled at that exact commit on both hosts after training exits. Do not change
-the code checkout while the trainer is running. Never copy code or media through
-Windows. Use one unique root per attempt; never overwrite partial outputs.
+cloned at that exact commit into separate clean checkouts on both hosts. Do not
+change the active trainer checkout while training runs. Never copy code or
+media through Windows. Use one unique root per attempt; never overwrite partial
+outputs.
 
 ## 1. Checkpoint and machines
 
@@ -65,7 +66,7 @@ script refuses a different checkpoint or partial output on resume.
 
 ```bash
 RUN_ID=competitor-ellipse-s3000-001
-cd /scratch/irtaza/dualhost-patchgan-code-272c163
+cd /scratch/irtaza/coverage660-ellipse-code-6510173
 tmux new-session -d -s "coverage660-ellipse-$RUN_ID" \
   "BUNDLE_ROOT=/scratch/irtaza/or-coverage660-$RUN_ID/bundle OUTPUT_ROOT=/scratch/irtaza/or-coverage660-$RUN_ID/outputs CHECKPOINT=/scratch/irtaza/or-ellipse-coverage660-ce506f0-20260923T1405Z/generator-v2/checkpoints/lora_weights_step_03000.safetensors bash scripts/run_coverage660_ellipse_3000.sh > /scratch/irtaza/or-coverage660-$RUN_ID/generation.log 2>&1"
 ```
